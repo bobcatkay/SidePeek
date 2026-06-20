@@ -1,0 +1,113 @@
+<UserControl x:Class="SidePeek.App.Views.CommandsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:conv="clr-namespace:SidePeek.App.Converters"
+             xmlns:vm="clr-namespace:SidePeek.App.ViewModels"
+             d:DataContext="{d:DesignInstance vm:CommandsViewModel}"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+    <UserControl.Resources>
+        <conv:StringToBrushConverter x:Key="StringToBrush" />
+
+        <Style x:Key="CardRun" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="10"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="CardDelete" TargetType="Button">
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="11" Background="Transparent">
+                            <TextBlock Text="&#xE711;" FontSize="11" HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                       Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#E53935" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <DockPanel Margin="0,0,0,12">
+            <TextBlock Text="快捷命令" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+            <ui:Button DockPanel.Dock="Right" HorizontalAlignment="Right" Appearance="Primary"
+                       Icon="{ui:SymbolIcon Add24}" Content="添加" Click="OnAdd" />
+        </DockPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
+            <ItemsControl ItemsSource="{Binding Commands}" VerticalAlignment="Top">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <UniformGrid Columns="2" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Height="78" Margin="0,0,8,8">
+                            <Button Style="{StaticResource CardRun}" Click="OnRun" ToolTip="点击执行">
+                                <Grid Margin="12,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border Width="40" Height="40" CornerRadius="20" VerticalAlignment="Center"
+                                            Background="{Binding AccentHex, Converter={StaticResource StringToBrush}}">
+                                        <TextBlock Text="{Binding Glyph}" FontSize="18" Foreground="White"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
+                                    </Border>
+                                    <StackPanel Grid.Column="1" Margin="10,0,18,0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="SemiBold"
+                                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Description}" FontSize="11" Margin="0,1,0,0"
+                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Grid>
+                            </Button>
+                            <Button Style="{StaticResource CardDelete}" HorizontalAlignment="Right"
+                                    VerticalAlignment="Top" Margin="0,6,6,0"
+                                    Click="OnDelete" ToolTip="删除" />
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>
