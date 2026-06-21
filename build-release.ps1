@@ -73,12 +73,19 @@ $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
 Write-Host "==> Version bumped: $oldVersion -> $newVersion" -ForegroundColor Cyan
 
-$buildArgs = @(
-    "-Runtime", $Runtime,
-    "-Configuration", $Configuration
-)
+$buildArgs = @{
+    Runtime = $Runtime
+    Configuration = $Configuration
+}
 if ($SelfContained) {
-    $buildArgs += "-SelfContained"
+    $buildArgs.SelfContained = $true
 }
 
-& $buildScript @buildArgs
+try {
+    & $buildScript @buildArgs
+}
+catch {
+    [System.IO.File]::WriteAllText($project, $projectText, $utf8NoBom)
+    Write-Host "==> Build failed; version rolled back to $oldVersion" -ForegroundColor Yellow
+    throw
+}

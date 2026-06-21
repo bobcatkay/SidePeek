@@ -1,12 +1,12 @@
 # SidePeek 开发环境与工具
 
-> 目标平台：Windows 11；技术栈：.NET 10 + WPF + WPF-UI。
+> 目标平台：Windows 11；技术栈：.NET 9 + WPF + WPF-UI。
 
 ## 1. 必装工具
 
 | 工具 | 版本 | 用途 | 安装命令 |
 |---|---|---|---|
-| .NET SDK | 10.x (LTS) | WPF 编译/运行核心 | `winget install Microsoft.DotNet.SDK.10` |
+| .NET SDK | 9.x | WPF 编译/运行核心 | `winget install Microsoft.DotNet.SDK.9` |
 | Git | 最新 | 版本管理 | `winget install Git.Git` |
 
 > 装完后**重启终端**（或重启 Cursor），让 PATH 生效。
@@ -28,8 +28,8 @@
 安装并重启终端后执行：
 
 ```powershell
-dotnet --version          # 应输出 10.x.x
-dotnet --list-sdks        # 应能看到 10.x 的 SDK
+dotnet --version          # 应输出 9.x.x
+dotnet --list-sdks        # 应能看到 9.x 的 SDK
 git --version             # 应输出 git version ...
 ```
 

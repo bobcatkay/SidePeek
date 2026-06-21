@@ -4,7 +4,7 @@
 
 .PARAMETER SelfContained
     Bundle the .NET runtime (no .NET install required on target, ~150MB).
-    Default is framework-dependent (requires .NET 10 Desktop Runtime, ~5MB).
+    Default is framework-dependent (requires .NET 9 Desktop Runtime, ~5MB).
 
 .PARAMETER Runtime
     Target runtime identifier. Default: win-x64.

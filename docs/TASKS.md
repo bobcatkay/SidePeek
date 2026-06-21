@@ -33,10 +33,10 @@
 
 - [ ] **T0.1 安装工具** `[CLI]`
   ```powershell
-  winget install Microsoft.DotNet.SDK.10
+  winget install Microsoft.DotNet.SDK.9
   winget install Git.Git
   ```
-  验收：重启终端后 `dotnet --version` 输出 10.x。
+  验收：重启终端后 `dotnet --version` 输出 9.x。
 
 - [ ] **T0.2 创建解决方案与项目** `[CLI]`（在 `D:\MyProjects\SidePeek` 下执行）
   ```powershell
@@ -54,7 +54,7 @@
 - [ ] **T0.3 配置项目引用与目标框架**
   - `App` → 引用 `Core`、`Infrastructure`、`Modules`
   - `Infrastructure`、`Modules` → 引用 `Core`
-  - 所有 `csproj` 设 `<TargetFramework>net10.0-windows</TargetFramework>`，类库需要 WPF 类型的设 `<UseWPF>true</UseWPF>`。
+  - 所有 `csproj` 设 `<TargetFramework>net9.0-windows</TargetFramework>`，类库需要 WPF 类型的设 `<UseWPF>true</UseWPF>`。
   - 新建 `Directory.Build.props` 统一 `Nullable`、`LangVersion`、`ImplicitUsings`。
   验收：`dotnet build` 成功，引用关系正确。
 
