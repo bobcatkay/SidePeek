@@ -1,0 +1,55 @@
+<UserControl x:Class="SidePeek.App.Views.ClipboardView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:vm="clr-namespace:SidePeek.App.ViewModels"
+             d:DataContext="{d:DesignInstance vm:ClipboardViewModel}"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="剪切板" FontSize="20" FontWeight="SemiBold" Margin="0,0,0,12"
+                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
+            <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Margin="0,0,0,10" CornerRadius="8" Padding="12" AllowDrop="True"
+                                PreviewMouseLeftButtonDown="OnItemMouseDown"
+                                PreviewMouseMove="OnItemMouseMove"
+                                DragOver="OnItemDragOver"
+                                Drop="OnItemDrop"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <DockPanel>
+                                    <ui:Button DockPanel.Dock="Right" Appearance="Transparent" Padding="6"
+                                               Icon="{ui:SymbolIcon Copy24}"
+                                               ToolTip="复制"
+                                               Command="{Binding DataContext.CopyCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                               CommandParameter="{Binding}" />
+                                    <TextBlock Text="{Binding CapturedAt, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                </DockPanel>
+                                <TextBlock Grid.Row="1" Margin="0,6,0,0"
+                                           Text="{Binding Text}" TextWrapping="Wrap" MaxHeight="160"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

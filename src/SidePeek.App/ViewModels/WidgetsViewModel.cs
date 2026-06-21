@@ -46,9 +46,44 @@ public partial class WidgetsViewModel : ObservableObject, IDisposable
         Persist();
     }
 
+    public void Update(ToolItem target, ToolItem source)
+    {
+        target.Title = source.Title;
+        target.Description = source.Description;
+        target.Glyph = source.Glyph;
+        target.AccentHex = source.AccentHex;
+        target.ExePath = source.ExePath;
+        target.Arguments = source.Arguments;
+        Persist();
+    }
+
     public void Remove(ToolItem item)
     {
         Tools.Remove(item);
+        Persist();
+    }
+
+    public void MoveToTop(ToolItem item)
+    {
+        int index = Tools.IndexOf(item);
+        if (index > 0)
+        {
+            Tools.Move(index, 0);
+            Persist();
+        }
+    }
+
+    public void Move(ToolItem source, ToolItem target)
+    {
+        if (ReferenceEquals(source, target))
+            return;
+
+        int oldIndex = Tools.IndexOf(source);
+        int newIndex = Tools.IndexOf(target);
+        if (oldIndex < 0 || newIndex < 0 || oldIndex == newIndex)
+            return;
+
+        Tools.Move(oldIndex, newIndex);
         Persist();
     }
 

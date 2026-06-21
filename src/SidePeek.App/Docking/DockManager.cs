@@ -19,7 +19,6 @@ public sealed class DockManager
     private const double TriggerStrip = 6;        // 收起时露出的厚度（像素）
     private const double CollapseRatio = 0.125;   // 收起时沿边长度占比
     private const double AnimationMs = 220;
-    private static readonly TimeSpan CollapseDelay = TimeSpan.FromMilliseconds(450);
 
     private readonly Window _window;
     private readonly DispatcherTimer _pollTimer;
@@ -49,6 +48,8 @@ public sealed class DockManager
     }
 
     public DockEdge Edge => _edge;
+    public DockState State => _state;
+    public int CollapseDelayMs { get; set; } = 450;
     public event EventHandler<DockEdge>? EdgeChanged;
 
     public void Start(DockEdge edge, bool startExpanded = false)
@@ -155,7 +156,7 @@ public sealed class DockManager
             else
             {
                 _outsideSince ??= DateTime.Now;
-                if (DateTime.Now - _outsideSince >= CollapseDelay)
+                if (DateTime.Now - _outsideSince >= TimeSpan.FromMilliseconds(CollapseDelayMs))
                     Collapse();
             }
         }

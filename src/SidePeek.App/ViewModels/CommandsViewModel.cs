@@ -24,9 +24,43 @@ public class CommandsViewModel
         Persist();
     }
 
+    public void Update(CommandItem target, CommandItem source)
+    {
+        target.Title = source.Title;
+        target.Description = source.Description;
+        target.Glyph = source.Glyph;
+        target.AccentHex = source.AccentHex;
+        target.CommandText = source.CommandText;
+        Persist();
+    }
+
     public void Remove(CommandItem item)
     {
         Commands.Remove(item);
+        Persist();
+    }
+
+    public void MoveToTop(CommandItem item)
+    {
+        int index = Commands.IndexOf(item);
+        if (index > 0)
+        {
+            Commands.Move(index, 0);
+            Persist();
+        }
+    }
+
+    public void Move(CommandItem source, CommandItem target)
+    {
+        if (ReferenceEquals(source, target))
+            return;
+
+        int oldIndex = Commands.IndexOf(source);
+        int newIndex = Commands.IndexOf(target);
+        if (oldIndex < 0 || newIndex < 0 || oldIndex == newIndex)
+            return;
+
+        Commands.Move(oldIndex, newIndex);
         Persist();
     }
 

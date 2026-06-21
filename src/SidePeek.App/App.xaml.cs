@@ -3,7 +3,6 @@ using System.Windows;
 using System.Windows.Threading;
 using SidePeek.App.Services;
 using SidePeek.App.Views;
-using Wpf.Ui.Appearance;
 
 namespace SidePeek.App;
 
@@ -26,7 +25,9 @@ public partial class App : Application
 
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
 
-        ApplicationThemeManager.Apply(ApplicationTheme.Light);
+        SettingsService.Initialize();
+        ThemeService.Apply(SettingsService.Current.Theme);
+        AppLogger.Info("SidePeek started.");
         DispatcherUnhandledException += OnUnhandledException;
 
         _window = new DockWindow();
@@ -46,8 +47,7 @@ public partial class App : Application
     {
         try
         {
-            string log = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "sidepeek_error.log");
-            System.IO.File.WriteAllText(log, e.Exception.ToString());
+            AppLogger.Error("Unhandled dispatcher exception.", e.Exception);
         }
         catch { /* ignore */ }
 

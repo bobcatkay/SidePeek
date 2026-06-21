@@ -18,4 +18,6 @@ public partial class NoteItem : ObservableObject
     private bool _isPinned;
 
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
+
+    public DateTime? CompletedAt { get; set; }
 }

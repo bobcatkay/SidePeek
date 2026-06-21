@@ -44,7 +44,7 @@
             </Setter>
         </Style>
 
-        <Style x:Key="EdgeButton" TargetType="Button">
+        <Style x:Key="HeaderIconButton" TargetType="Button">
             <Setter Property="Width" Value="30" />
             <Setter Property="Height" Value="28" />
             <Setter Property="Margin" Value="2,0" />
@@ -89,17 +89,8 @@
                                Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Style="{StaticResource EdgeButton}" Click="OnDockLeft" ToolTip="吸附到左边">
-                        <ui:SymbolIcon Symbol="ArrowLeft24" />
-                    </Button>
-                    <Button Style="{StaticResource EdgeButton}" Click="OnDockTop" ToolTip="吸附到上边">
-                        <ui:SymbolIcon Symbol="ArrowUp24" />
-                    </Button>
-                    <Button Style="{StaticResource EdgeButton}" Click="OnDockRight" ToolTip="吸附到右边">
-                        <ui:SymbolIcon Symbol="ArrowRight24" />
-                    </Button>
-                    <Button Style="{StaticResource EdgeButton}" Click="OnDockBottom" ToolTip="吸附到下边">
-                        <ui:SymbolIcon Symbol="ArrowDown24" />
+                    <Button Style="{StaticResource HeaderIconButton}" Click="OnOpenSettings" ToolTip="设置">
+                        <ui:SymbolIcon Symbol="Settings24" />
                     </Button>
                 </StackPanel>
             </DockPanel>
@@ -107,7 +98,7 @@
             <!-- Tab 切换 -->
             <Border Grid.Row="1" Margin="0,0,0,14" CornerRadius="10" Padding="4"
                     Background="{DynamicResource ControlFillColorDefaultBrush}">
-                <UniformGrid Columns="3">
+                <UniformGrid Columns="4">
                     <RadioButton x:Name="TabNotes" Style="{StaticResource TabToggle}"
                                  GroupName="Tabs" IsChecked="True" Checked="OnTabChecked">
                         <StackPanel Orientation="Horizontal">
@@ -127,6 +118,13 @@
                         <StackPanel Orientation="Horizontal">
                             <ui:SymbolIcon Symbol="Apps24" FontSize="18" Margin="0,0,6,0" />
                             <TextBlock Text="工具" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="TabClipboard" Style="{StaticResource TabToggle}"
+                                 GroupName="Tabs" Checked="OnTabChecked">
+                        <StackPanel Orientation="Horizontal">
+                            <ui:SymbolIcon Symbol="Clipboard24" FontSize="18" Margin="0,0,6,0" />
+                            <TextBlock Text="剪切板" VerticalAlignment="Center" />
                         </StackPanel>
                     </RadioButton>
                 </UniformGrid>

@@ -56,16 +56,21 @@ dotnet run --project src/SidePeek.App # 运行
 dotnet test                          # 运行单元测试
 
 # 打包为单文件 exe（输出到 dist\）
-.\build.ps1                          # framework-dependent（需目标机装 .NET 10 桌面运行时，~6MB）
-.\build.ps1 -SelfContained           # self-contained（自带运行时，免安装，~150MB）
+.\build.ps1                          # 普通打包，不修改版本号
+.\build.ps1 -SelfContained           # 普通自包含打包，不修改版本号
+
+# 发布打包：先自增版本号，再调用 build.ps1 打包
+.\build-release.ps1                  # 默认递增 Patch，例如 0.3.0 -> 0.3.1
+.\build-release.ps1 -Part Minor      # 递增 Minor，例如 0.3.1 -> 0.4.0
+.\build-release.ps1 -Part Major      # 递增 Major，例如 0.4.0 -> 1.0.0
 ```
 
 ## 8. 运行时快捷键与托盘
 
 - 全局热键 **Ctrl + Alt + S**：展开 / 收起面板。
 - 鼠标移到屏幕停靠边中部的小触发块：悬停展开；移开自动收起。
-- 系统托盘图标：双击切换显示；右键菜单含「开机自启」开关与「退出」。
-- 数据保存在 `%AppData%\SidePeek\`（`notes.json` / `commands.json` / `tools.json`）。
+- 系统托盘图标：双击切换显示；右键菜单含「设置」「开机自启」开关与「退出」。
+- 数据保存在 `%AppData%\SidePeek\`（`notes.json` / `completed-notes.json` / `commands.json` / `tools.json` / `clipboard.json` / `settings.json`）。
 
 ## 7. 网络代理（本机环境）
 

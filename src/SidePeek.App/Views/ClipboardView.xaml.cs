@@ -1,7 +1,7 @@
 using System;
 using System.Windows;
-using System.Windows.Controls.Primitives;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using SidePeek.App.Models;
@@ -9,28 +9,28 @@ using SidePeek.App.ViewModels;
 
 namespace SidePeek.App.Views;
 
-public partial class NotesView : UserControl
+public partial class ClipboardView : UserControl
 {
-    private NotesViewModel ViewModel => (NotesViewModel)DataContext;
+    private readonly ClipboardViewModel _viewModel = new();
     private Point _dragStart;
-    private NoteItem? _dragItem;
+    private ClipboardItem? _dragItem;
 
-    public NotesView()
+    public ClipboardView()
     {
         InitializeComponent();
-        DataContext = new NotesViewModel();
+        DataContext = _viewModel;
     }
 
     private void OnItemMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if (IsInputElement(e.OriginalSource as DependencyObject))
+        if (IsButtonElement(e.OriginalSource as DependencyObject))
         {
             _dragItem = null;
             return;
         }
 
         _dragStart = e.GetPosition(this);
-        _dragItem = ((FrameworkElement)sender).DataContext as NoteItem;
+        _dragItem = ((FrameworkElement)sender).DataContext as ClipboardItem;
     }
 
     private void OnItemMouseMove(object sender, MouseEventArgs e)
@@ -49,26 +49,26 @@ public partial class NotesView : UserControl
 
     private void OnItemDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(typeof(NoteItem)) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Effects = e.Data.GetDataPresent(typeof(ClipboardItem)) ? DragDropEffects.Move : DragDropEffects.None;
         e.Handled = true;
     }
 
     private void OnItemDrop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetData(typeof(NoteItem)) is NoteItem source &&
-            ((FrameworkElement)sender).DataContext is NoteItem target)
+        if (e.Data.GetData(typeof(ClipboardItem)) is ClipboardItem source &&
+            ((FrameworkElement)sender).DataContext is ClipboardItem target)
         {
-            ViewModel.Move(source, target);
+            _viewModel.Move(source, target);
         }
 
         e.Handled = true;
     }
 
-    private static bool IsInputElement(DependencyObject? source)
+    private static bool IsButtonElement(DependencyObject? source)
     {
         while (source is not null)
         {
-            if (source is TextBox or ButtonBase)
+            if (source is ButtonBase)
                 return true;
             source = VisualTreeHelper.GetParent(source);
         }

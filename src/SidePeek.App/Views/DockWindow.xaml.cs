@@ -1,10 +1,13 @@
 using System;
+using System.Linq;
 using System.Windows;
 using System.Windows.Interop;
+using System.Windows.Input;
 using System.Windows.Media;
 using SidePeek.App.Docking;
 using SidePeek.App.Interop;
 using SidePeek.App.Models;
+using SidePeek.App.Services;
 
 namespace SidePeek.App.Views;
 
@@ -18,6 +21,10 @@ public partial class DockWindow : Window
     private NotesView? _notesView;
     private CommandsView? _commandsView;
     private WidgetsView? _widgetsView;
+    private ClipboardView? _clipboardView;
+    private SettingsView? _settingsView;
+    private bool _hotkeyRegistered;
+    private string? _registeredHotkeySignature;
 
     public DockWindow()
     {
@@ -31,21 +38,76 @@ public partial class DockWindow : Window
     /// <summary>展开/收起切换（供托盘双击 / 菜单调用）。</summary>
     public void ToggleVisibility() => _dock?.Toggle();
 
+    public void OpenSettings()
+    {
+        ContentHost.Content = _settingsView ??= new SettingsView();
+        _dock?.Reveal();
+        Activate();
+    }
+
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
         _hwnd = new WindowInteropHelper(this).Handle;
         ApplyAcrylicBackdrop();
+        HwndSource.FromHwnd(_hwnd)?.AddHook(WndProc);
         RegisterHotkey();
     }
 
     private void RegisterHotkey()
     {
-        // 全局热键：Ctrl + Alt + S 切换展开/收起
-        NativeMethods.RegisterHotKey(_hwnd, HotkeyId,
-            NativeMethods.MOD_CONTROL | NativeMethods.MOD_ALT, 0x53 /* VK_S */);
+        if (_hwnd == IntPtr.Zero)
+            return;
 
-        HwndSource.FromHwnd(_hwnd)?.AddHook(WndProc);
+        HotkeySettings hotkey = SettingsService.Current.Hotkey;
+        string signature = DescribeHotkey(hotkey);
+        if (_hotkeyRegistered && string.Equals(_registeredHotkeySignature, signature, StringComparison.Ordinal))
+            return;
+
+        UnregisterHotkey();
+
+        uint modifiers = 0;
+        if (hotkey.Control)
+            modifiers |= NativeMethods.MOD_CONTROL;
+        if (hotkey.Alt)
+            modifiers |= NativeMethods.MOD_ALT;
+        if (hotkey.Shift)
+            modifiers |= NativeMethods.MOD_SHIFT;
+
+        if (modifiers == 0 || !Enum.TryParse(hotkey.Key, ignoreCase: true, out Key key))
+            return;
+
+        uint virtualKey = (uint)KeyInterop.VirtualKeyFromKey(key);
+        if (virtualKey == 0)
+            return;
+
+        _hotkeyRegistered = NativeMethods.RegisterHotKey(_hwnd, HotkeyId, modifiers, virtualKey);
+        if (!_hotkeyRegistered)
+            AppLogger.Error($"Unable to register global hotkey: {DescribeHotkey(hotkey)}.");
+        else
+            _registeredHotkeySignature = signature;
+    }
+
+    private void UnregisterHotkey()
+    {
+        if (!_hotkeyRegistered || _hwnd == IntPtr.Zero)
+            return;
+
+        NativeMethods.UnregisterHotKey(_hwnd, HotkeyId);
+        _hotkeyRegistered = false;
+        _registeredHotkeySignature = null;
+    }
+
+    private static string DescribeHotkey(HotkeySettings hotkey)
+    {
+        string modifiers = string.Join("+", new[]
+        {
+            hotkey.Control ? "Ctrl" : string.Empty,
+            hotkey.Alt ? "Alt" : string.Empty,
+            hotkey.Shift ? "Shift" : string.Empty
+        }.Where(part => !string.IsNullOrEmpty(part)));
+
+        return string.IsNullOrEmpty(modifiers) ? hotkey.Key : $"{modifiers}+{hotkey.Key}";
     }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -60,8 +122,10 @@ public partial class DockWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        SettingsService.Changed -= OnSettingsChanged;
+        UnregisterHotkey();
         if (_hwnd != IntPtr.Zero)
-            NativeMethods.UnregisterHotKey(_hwnd, HotkeyId);
+            HwndSource.FromHwnd(_hwnd)?.RemoveHook(WndProc);
         base.OnClosed(e);
     }
 
@@ -86,8 +150,15 @@ public partial class DockWindow : Window
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         ShowTab(TabNotes);
-        _dock = new DockManager(this);
-        _dock.Start(DockEdge.Right, startExpanded: true);
+        _clipboardView ??= new ClipboardView();
+        AppSettings settings = SettingsService.Current;
+        _dock = new DockManager(this)
+        {
+            CollapseDelayMs = settings.CollapseDelayMs
+        };
+        _dock.EdgeChanged += OnDockEdgeChanged;
+        SettingsService.Changed += OnSettingsChanged;
+        _dock.Start(settings.DockEdge, startExpanded: true);
     }
 
     private void OnTabChecked(object sender, RoutedEventArgs e)
@@ -105,10 +176,25 @@ public partial class DockWindow : Window
             ContentHost.Content = _commandsView ??= new CommandsView();
         else if (ReferenceEquals(sender, TabWidgets))
             ContentHost.Content = _widgetsView ??= new WidgetsView();
+        else if (ReferenceEquals(sender, TabClipboard))
+            ContentHost.Content = _clipboardView ??= new ClipboardView();
     }
 
-    private void OnDockLeft(object sender, RoutedEventArgs e) => _dock?.MoveToEdge(DockEdge.Left);
-    private void OnDockTop(object sender, RoutedEventArgs e) => _dock?.MoveToEdge(DockEdge.Top);
-    private void OnDockRight(object sender, RoutedEventArgs e) => _dock?.MoveToEdge(DockEdge.Right);
-    private void OnDockBottom(object sender, RoutedEventArgs e) => _dock?.MoveToEdge(DockEdge.Bottom);
+    private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings();
+
+    private void OnDockEdgeChanged(object? sender, DockEdge edge) => SettingsService.SetDockEdge(edge);
+
+    private void OnSettingsChanged(object? sender, EventArgs e)
+    {
+        AppSettings settings = SettingsService.Current;
+        ThemeService.Apply(settings.Theme);
+        RegisterHotkey();
+
+        if (_dock is null)
+            return;
+
+        _dock.CollapseDelayMs = settings.CollapseDelayMs;
+        if (_dock.Edge != settings.DockEdge)
+            _dock.SetEdge(settings.DockEdge, _dock.State == DockState.Expanded);
+    }
 }

@@ -11,6 +11,7 @@ public sealed class TrayService : IDisposable
     private readonly Forms.NotifyIcon _icon;
     private readonly DockWindow _window;
     private readonly Forms.ToolStripMenuItem _startupItem;
+    private bool _syncingStartup;
 
     public TrayService(DockWindow window)
     {
@@ -28,23 +29,46 @@ public sealed class TrayService : IDisposable
         var toggleItem = new Forms.ToolStripMenuItem("显示 / 收起");
         toggleItem.Click += (_, _) => _window.ToggleVisibility();
 
+        var settingsItem = new Forms.ToolStripMenuItem("设置");
+        settingsItem.Click += (_, _) => _window.OpenSettings();
+
         _startupItem = new Forms.ToolStripMenuItem("开机自启")
         {
             CheckOnClick = true,
-            Checked = StartupService.IsEnabled
+            Checked = SettingsService.Current.StartWithWindows
         };
-        _startupItem.CheckedChanged += (_, _) => StartupService.IsEnabled = _startupItem.Checked;
+        _startupItem.CheckedChanged += (_, _) =>
+        {
+            if (_syncingStartup)
+                return;
+            SettingsService.Update(settings => settings.StartWithWindows = _startupItem.Checked);
+        };
 
         var exitItem = new Forms.ToolStripMenuItem("退出 SidePeek");
         exitItem.Click += (_, _) => System.Windows.Application.Current.Shutdown();
 
         menu.Items.Add(toggleItem);
+        menu.Items.Add(settingsItem);
         menu.Items.Add(_startupItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
         menu.Items.Add(exitItem);
 
         _icon.ContextMenuStrip = menu;
         _icon.DoubleClick += (_, _) => _window.ToggleVisibility();
+        SettingsService.Changed += OnSettingsChanged;
+    }
+
+    private void OnSettingsChanged(object? sender, EventArgs e)
+    {
+        _syncingStartup = true;
+        try
+        {
+            _startupItem.Checked = SettingsService.Current.StartWithWindows;
+        }
+        finally
+        {
+            _syncingStartup = false;
+        }
     }
 
     private static Drawing.Icon CreateIcon()
@@ -73,6 +97,7 @@ public sealed class TrayService : IDisposable
 
     public void Dispose()
     {
+        SettingsService.Changed -= OnSettingsChanged;
         _icon.Visible = false;
         _icon.Dispose();
     }
