@@ -3,11 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:svc="clr-namespace:SidePeek.App.Services"
+        xmlns:sw="clr-namespace:System.Windows;assembly=PresentationFramework"
         Title="命令"
         Width="440" SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize" Topmost="True"
-        FontFamily="Segoe UI"
+        FontFamily="{x:Static sw:SystemFonts.MessageFontFamily}"
         Background="{DynamicResource ApplicationBackgroundBrush}">
 
     <Window.Resources>

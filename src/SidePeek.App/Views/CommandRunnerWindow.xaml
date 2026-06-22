@@ -2,11 +2,12 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:sw="clr-namespace:System.Windows;assembly=PresentationFramework"
         Title="执行命令"
         Width="640" Height="460"
         WindowStartupLocation="CenterScreen"
         Topmost="True"
-        FontFamily="Segoe UI"
+        FontFamily="{x:Static sw:SystemFonts.MessageFontFamily}"
         Background="{DynamicResource ApplicationBackgroundBrush}">
     <Grid Margin="18">
         <Grid.RowDefinitions>

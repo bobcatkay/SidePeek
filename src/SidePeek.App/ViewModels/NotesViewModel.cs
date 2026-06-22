@@ -143,6 +143,27 @@ public partial class NotesViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void DeleteNote(NoteItem? note)
+    {
+        if (note is null)
+            return;
+
+        string title = string.IsNullOrWhiteSpace(note.Title) ? "这条便签" : $"「{note.Title}」";
+        MessageBoxResult result = MessageBox.Show(
+            $"确定要删除{title}吗？\n删除后无法恢复。",
+            "删除便签",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+
+        if (result != MessageBoxResult.Yes)
+            return;
+
+        Notes.Remove(note);
+        if (ReferenceEquals(Selected, note))
+            Selected = Notes.FirstOrDefault();
+    }
+
+    [RelayCommand]
     private void TogglePin(NoteItem? note)
     {
         if (note is null)

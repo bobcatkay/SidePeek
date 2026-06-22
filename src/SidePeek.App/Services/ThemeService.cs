@@ -10,15 +10,17 @@ public static class ThemeService
 
     public static void Apply(AppThemeMode mode)
     {
-        ApplicationTheme theme = mode switch
-        {
-            AppThemeMode.Dark => ApplicationTheme.Dark,
-            AppThemeMode.System => SystemPrefersLight() ? ApplicationTheme.Light : ApplicationTheme.Dark,
-            _ => ApplicationTheme.Light
-        };
+        ApplicationTheme theme = IsLightTheme(mode) ? ApplicationTheme.Light : ApplicationTheme.Dark;
 
         ApplicationThemeManager.Apply(theme);
     }
+
+    public static bool IsLightTheme(AppThemeMode mode) => mode switch
+    {
+        AppThemeMode.Dark => false,
+        AppThemeMode.System => SystemPrefersLight(),
+        _ => true
+    };
 
     private static bool SystemPrefersLight()
     {

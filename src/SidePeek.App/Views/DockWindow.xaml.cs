@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Input;
@@ -14,6 +15,7 @@ namespace SidePeek.App.Views;
 public partial class DockWindow : Window
 {
     private const int HotkeyId = 0xB001;
+    private const int AcrylicAccentFlags = 2;
 
     private DockManager? _dock;
     private IntPtr _hwnd;
@@ -25,6 +27,7 @@ public partial class DockWindow : Window
     private SettingsView? _settingsView;
     private bool _hotkeyRegistered;
     private string? _registeredHotkeySignature;
+    private bool _startupShown;
 
     public DockWindow()
     {
@@ -40,6 +43,7 @@ public partial class DockWindow : Window
 
     public void OpenSettings()
     {
+        ClearSelectedTab();
         ContentHost.Content = _settingsView ??= new SettingsView();
         _dock?.Reveal();
         Activate();
@@ -52,6 +56,22 @@ public partial class DockWindow : Window
         ApplyAcrylicBackdrop();
         HwndSource.FromHwnd(_hwnd)?.AddHook(WndProc);
         RegisterHotkey();
+        InitializeDocking();
+    }
+
+    private void InitializeDocking()
+    {
+        if (_dock is not null)
+            return;
+
+        AppSettings settings = SettingsService.Current;
+        _dock = new DockManager(this)
+        {
+            CollapseDelayMs = settings.CollapseDelayMs
+        };
+        _dock.EdgeChanged += OnDockEdgeChanged;
+        SettingsService.Changed += OnSettingsChanged;
+        _dock.Start(settings.DockEdge, startExpanded: true);
     }
 
     private void RegisterHotkey()
@@ -131,8 +151,17 @@ public partial class DockWindow : Window
 
     private void ApplyAcrylicBackdrop()
     {
-        IntPtr hwnd = new WindowInteropHelper(this).Handle;
+        IntPtr hwnd = _hwnd != IntPtr.Zero
+            ? _hwnd
+            : new WindowInteropHelper(this).Handle;
 
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        UpdateBackdropTint();
+
+        // 透明合成表面，让系统亚克力背景透上来形成毛玻璃。
+        // 注意：透明表面会让 WPF 文字退化为灰阶抗锯齿（略糊），这是毛玻璃的固有代价。
         HwndSource? source = HwndSource.FromHwnd(hwnd);
         if (source?.CompositionTarget != null)
             source.CompositionTarget.BackgroundColor = Colors.Transparent;
@@ -143,22 +172,87 @@ public partial class DockWindow : Window
         int backdrop = NativeMethods.DWMSBT_TRANSIENTWINDOW;
         NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
 
+        // DWMWA_SYSTEMBACKDROP_TYPE 在部分 Windows 版本/窗口组合下会静默退化；
+        // legacy Acrylic 组合属性可作为更可靠的兜底。
+        EnableAcrylicBlurBehind(hwnd);
+
         int corner = NativeMethods.DWMWCP_ROUND;
         NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
+    }
+
+    private void EnableAcrylicBlurBehind(IntPtr hwnd)
+    {
+        var accent = new NativeMethods.ACCENT_POLICY
+        {
+            AccentState = NativeMethods.ACCENT_ENABLE_ACRYLICBLURBEHIND,
+            AccentFlags = AcrylicAccentFlags,
+            GradientColor = GetAcrylicGradientColor()
+        };
+
+        int accentSize = Marshal.SizeOf<NativeMethods.ACCENT_POLICY>();
+        IntPtr accentPtr = Marshal.AllocHGlobal(accentSize);
+
+        try
+        {
+            Marshal.StructureToPtr(accent, accentPtr, false);
+            var data = new NativeMethods.WINDOWCOMPOSITIONATTRIBDATA
+            {
+                Attribute = NativeMethods.WCA_ACCENT_POLICY,
+                Data = accentPtr,
+                SizeOfData = accentSize
+            };
+
+            NativeMethods.SetWindowCompositionAttribute(hwnd, ref data);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            // Older systems can still use the DWM path above.
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(accentPtr);
+        }
+    }
+
+    private void UpdateBackdropTint()
+    {
+        bool isLightTheme = ThemeService.IsLightTheme(SettingsService.Current.Theme);
+        BackdropTintLayer.Background = new SolidColorBrush(isLightTheme
+            ? Color.FromArgb(0x3D, 0xFF, 0xFF, 0xFF)
+            : Color.FromArgb(0x52, 0x18, 0x1B, 0x20));
+    }
+
+    private int GetAcrylicGradientColor()
+    {
+        bool isLightTheme = ThemeService.IsLightTheme(SettingsService.Current.Theme);
+        Color tint = isLightTheme
+            ? Color.FromArgb(0xB8, 0xF8, 0xFA, 0xFC)
+            : Color.FromArgb(0xCC, 0x18, 0x1B, 0x20);
+
+        return ToAbgr(tint);
+    }
+
+    private static int ToAbgr(Color color)
+    {
+        uint value = ((uint)color.A << 24)
+            | ((uint)color.B << 16)
+            | ((uint)color.G << 8)
+            | color.R;
+
+        return unchecked((int)value);
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         ShowTab(TabNotes);
         _clipboardView ??= new ClipboardView();
-        AppSettings settings = SettingsService.Current;
-        _dock = new DockManager(this)
+
+        if (!_startupShown)
         {
-            CollapseDelayMs = settings.CollapseDelayMs
-        };
-        _dock.EdgeChanged += OnDockEdgeChanged;
-        SettingsService.Changed += OnSettingsChanged;
-        _dock.Start(settings.DockEdge, startExpanded: true);
+            _startupShown = true;
+            ApplyAcrylicBackdrop();
+            Opacity = 1;
+        }
     }
 
     private void OnTabChecked(object sender, RoutedEventArgs e)
@@ -180,6 +274,14 @@ public partial class DockWindow : Window
             ContentHost.Content = _clipboardView ??= new ClipboardView();
     }
 
+    private void ClearSelectedTab()
+    {
+        TabNotes.IsChecked = false;
+        TabCommands.IsChecked = false;
+        TabWidgets.IsChecked = false;
+        TabClipboard.IsChecked = false;
+    }
+
     private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings();
 
     private void OnDockEdgeChanged(object? sender, DockEdge edge) => SettingsService.SetDockEdge(edge);
@@ -188,6 +290,7 @@ public partial class DockWindow : Window
     {
         AppSettings settings = SettingsService.Current;
         ThemeService.Apply(settings.Theme);
+        ApplyAcrylicBackdrop();
         RegisterHotkey();
 
         if (_dock is null)

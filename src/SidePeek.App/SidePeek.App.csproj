@@ -10,7 +10,7 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>SidePeek</AssemblyName>
     <RootNamespace>SidePeek.App</RootNamespace>
-    <Version>0.3.2</Version>
+    <Version>0.3.3</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <!-- WPF 通过 app.manifest 管理 PerMonitorV2 DPI；WinForms 的 DPI 自管理告警不适用 -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>

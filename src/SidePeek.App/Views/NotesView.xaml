@@ -71,6 +71,11 @@
                                                        ToolTip="完成"
                                                        Command="{Binding DataContext.CompleteNoteCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                        CommandParameter="{Binding}" />
+                                            <ui:Button Appearance="Transparent" Padding="6"
+                                                       Icon="{ui:SymbolIcon Delete24}"
+                                                       ToolTip="删除"
+                                                       Command="{Binding DataContext.DeleteNoteCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                       CommandParameter="{Binding}" />
                                         </StackPanel>
                                         <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
                                                  FontSize="15" FontWeight="SemiBold" BorderThickness="0"
