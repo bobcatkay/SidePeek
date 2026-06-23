@@ -8,7 +8,10 @@
         Width="440" SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize" Topmost="True"
-        FontFamily="{x:Static sw:SystemFonts.MessageFontFamily}"
+        FontFamily="Segoe UI Variable Text, Segoe UI"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Grayscale"
+        TextOptions.TextHintingMode="Animated"
         Background="{DynamicResource ApplicationBackgroundBrush}">
 
     <Window.Resources>

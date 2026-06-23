@@ -21,10 +21,6 @@ public partial class WidgetsView : UserControl
 
     private DockWindow? Host => Window.GetWindow(this) as DockWindow;
 
-    private void OnLoaded(object sender, RoutedEventArgs e) => _viewModel.Resume();
-
-    private void OnUnloaded(object sender, RoutedEventArgs e) => _viewModel.Pause();
-
     private void OnAddTool(object sender, RoutedEventArgs e)
     {
         Host?.SuspendDock();

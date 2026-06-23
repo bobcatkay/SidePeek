@@ -8,6 +8,7 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SidePeek.App.Interop;
 using SidePeek.App.Models;
 using SidePeek.App.Services;
 
@@ -24,6 +25,7 @@ public partial class NotesViewModel : ObservableObject
     };
 
     private readonly DispatcherTimer _saveTimer;
+    private readonly DispatcherTimer _metricsTimer;
 
     public ObservableCollection<NoteItem> Notes { get; }
     public ObservableCollection<NoteItem> CompletedNotes { get; }
@@ -44,6 +46,18 @@ public partial class NotesViewModel : ObservableObject
 
     [ObservableProperty]
     private NoteHistoryRange _selectedHistoryRange;
+
+    [ObservableProperty]
+    private string _time = string.Empty;
+
+    [ObservableProperty]
+    private string _date = string.Empty;
+
+    [ObservableProperty]
+    private double _memoryUsedPercent;
+
+    [ObservableProperty]
+    private string _memoryText = string.Empty;
 
     public NotesViewModel()
     {
@@ -66,6 +80,9 @@ public partial class NotesViewModel : ObservableObject
         };
         _saveTimer.Tick += (_, _) => { _saveTimer.Stop(); Persist(); };
 
+        _metricsTimer = new DispatcherTimer(DispatcherPriority.Background) { Interval = TimeSpan.FromSeconds(1) };
+        _metricsTimer.Tick += (_, _) => RefreshMetrics();
+
         Notes.CollectionChanged += OnCollectionChanged;
         CompletedNotes.CollectionChanged += OnCollectionChanged;
         foreach (NoteItem note in Notes)
@@ -77,6 +94,14 @@ public partial class NotesViewModel : ObservableObject
         PruneCompletedHistory();
         RefreshCompletedNotes();
     }
+
+    public void Resume()
+    {
+        RefreshMetrics();
+        _metricsTimer.Start();
+    }
+
+    public void Pause() => _metricsTimer.Stop();
 
     public void Persist()
     {
@@ -143,19 +168,11 @@ public partial class NotesViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void DeleteNote(NoteItem? note)
+    private void DeleteNote(NoteItem? note) => Delete(note);
+
+    public void Delete(NoteItem? note)
     {
         if (note is null)
-            return;
-
-        string title = string.IsNullOrWhiteSpace(note.Title) ? "这条便签" : $"「{note.Title}」";
-        MessageBoxResult result = MessageBox.Show(
-            $"确定要删除{title}吗？\n删除后无法恢复。",
-            "删除便签",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
-
-        if (result != MessageBoxResult.Yes)
             return;
 
         Notes.Remove(note);
@@ -257,6 +274,26 @@ public partial class NotesViewModel : ObservableObject
         VisibleCompletedNotes.Clear();
         foreach (NoteItem note in items)
             VisibleCompletedNotes.Add(note);
+    }
+
+    private void RefreshMetrics()
+    {
+        DateTime now = DateTime.Now;
+        Time = now.ToString("HH:mm:ss");
+        Date = now.ToString("yyyy年M月d日 dddd");
+
+        var mem = new NativeMethods.MEMORYSTATUSEX
+        {
+            dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.MEMORYSTATUSEX>()
+        };
+
+        if (!NativeMethods.GlobalMemoryStatusEx(ref mem))
+            return;
+
+        MemoryUsedPercent = mem.dwMemoryLoad;
+        double totalGb = mem.ullTotalPhys / 1024d / 1024d / 1024d;
+        double usedGb = (mem.ullTotalPhys - mem.ullAvailPhys) / 1024d / 1024d / 1024d;
+        MemoryText = $"{usedGb:0.0} / {totalGb:0.0} GB";
     }
 
     private static List<NoteItem> Defaults() => new()

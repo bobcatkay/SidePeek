@@ -34,6 +34,9 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
 
+    [DllImport("kernel32.dll")]
+    public static extern uint GetOEMCP();
+
     [StructLayout(LayoutKind.Sequential)]
     public struct MARGINS
     {

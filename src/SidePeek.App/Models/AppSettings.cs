@@ -18,6 +18,7 @@ public sealed class HotkeySettings
 public sealed class AppSettings
 {
     public DockEdge DockEdge { get; set; } = DockEdge.Right;
+    public string DockDisplayDeviceName { get; set; } = string.Empty;
     public int CollapseDelayMs { get; set; } = 450;
     public int NoteHistoryMonths { get; set; } = 12;
     public AppThemeMode Theme { get; set; } = AppThemeMode.Light;

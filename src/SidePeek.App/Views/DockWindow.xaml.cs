@@ -67,11 +67,12 @@ public partial class DockWindow : Window
         AppSettings settings = SettingsService.Current;
         _dock = new DockManager(this)
         {
-            CollapseDelayMs = settings.CollapseDelayMs
+            CollapseDelayMs = settings.CollapseDelayMs,
+            IsPinned = PinToggle.IsChecked == true
         };
         _dock.EdgeChanged += OnDockEdgeChanged;
         SettingsService.Changed += OnSettingsChanged;
-        _dock.Start(settings.DockEdge, startExpanded: true);
+        _dock.Start(settings.DockEdge, settings.DockDisplayDeviceName, startExpanded: true);
     }
 
     private void RegisterHotkey()
@@ -284,6 +285,16 @@ public partial class DockWindow : Window
 
     private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings();
 
+    private void OnPinToggled(object sender, RoutedEventArgs e)
+    {
+        if (_dock is null)
+            return;
+
+        _dock.IsPinned = PinToggle.IsChecked == true;
+        if (_dock.IsPinned)
+            _dock.Reveal();
+    }
+
     private void OnDockEdgeChanged(object? sender, DockEdge edge) => SettingsService.SetDockEdge(edge);
 
     private void OnSettingsChanged(object? sender, EventArgs e)
@@ -297,7 +308,10 @@ public partial class DockWindow : Window
             return;
 
         _dock.CollapseDelayMs = settings.CollapseDelayMs;
-        if (_dock.Edge != settings.DockEdge)
-            _dock.SetEdge(settings.DockEdge, _dock.State == DockState.Expanded);
+        if (_dock.Edge != settings.DockEdge ||
+            !string.Equals(_dock.DisplayDeviceName, settings.DockDisplayDeviceName, StringComparison.OrdinalIgnoreCase))
+        {
+            _dock.SetPlacement(settings.DockEdge, settings.DockDisplayDeviceName, _dock.State == DockState.Expanded);
+        }
     }
 }

@@ -5,6 +5,7 @@ using System.Reflection;
 using CommunityToolkit.Mvvm.ComponentModel;
 using SidePeek.App.Models;
 using SidePeek.App.Services;
+using Forms = System.Windows.Forms;
 
 namespace SidePeek.App.ViewModels;
 
@@ -23,6 +24,7 @@ public sealed class SettingsOption<T>
 public sealed class SettingsViewModel : ObservableObject
 {
     private bool _loading;
+    private SettingsOption<string> _selectedDockDisplay = null!;
     private SettingsOption<DockEdge> _selectedDockEdge = null!;
     private SettingsOption<AppThemeMode> _selectedTheme = null!;
     private double _collapseDelayMs;
@@ -36,6 +38,8 @@ public sealed class SettingsViewModel : ObservableObject
 
     public SettingsViewModel()
     {
+        DockDisplays = BuildDockDisplays();
+
         DockEdges = new[]
         {
             new SettingsOption<DockEdge>("左侧", DockEdge.Left),
@@ -58,10 +62,22 @@ public sealed class SettingsViewModel : ObservableObject
         SettingsService.Changed += OnSettingsChanged;
     }
 
+    public IReadOnlyList<SettingsOption<string>> DockDisplays { get; }
     public IReadOnlyList<SettingsOption<DockEdge>> DockEdges { get; }
     public IReadOnlyList<SettingsOption<AppThemeMode>> Themes { get; }
     public IReadOnlyList<string> HotkeyKeys { get; }
     public string VersionText { get; } = $"v{GetDisplayVersion()}";
+
+    public SettingsOption<string> SelectedDockDisplay
+    {
+        get => _selectedDockDisplay;
+        set
+        {
+            if (value is null || !SetProperty(ref _selectedDockDisplay, value) || _loading)
+                return;
+            SettingsService.Update(settings => settings.DockDisplayDeviceName = value.Value);
+        }
+    }
 
     public SettingsOption<DockEdge> SelectedDockEdge
     {
@@ -178,6 +194,9 @@ public sealed class SettingsViewModel : ObservableObject
         try
         {
             AppSettings settings = SettingsService.Current;
+            SelectedDockDisplay = DockDisplays.FirstOrDefault(option =>
+                    string.Equals(option.Value, settings.DockDisplayDeviceName, StringComparison.OrdinalIgnoreCase))
+                ?? DockDisplays[0];
             SelectedDockEdge = DockEdges.First(option => option.Value == settings.DockEdge);
             SelectedTheme = Themes.First(option => option.Value == settings.Theme);
             CollapseDelayMs = settings.CollapseDelayMs;
@@ -219,6 +238,22 @@ public sealed class SettingsViewModel : ObservableObject
         parts.Add(HotkeyKey);
 
         HotkeyPreview = string.Join(" + ", parts);
+    }
+
+    private static IReadOnlyList<SettingsOption<string>> BuildDockDisplays()
+    {
+        Forms.Screen[] screens = Forms.Screen.AllScreens;
+        if (screens.Length == 0)
+            return new[] { new SettingsOption<string>("默认显示器", string.Empty) };
+
+        return screens
+            .Select((screen, index) =>
+            {
+                string primarySuffix = screen.Primary ? "（主屏）" : string.Empty;
+                string label = $"显示器 {index + 1}{primarySuffix} · {screen.Bounds.Width}x{screen.Bounds.Height}";
+                return new SettingsOption<string>(label, screen.DeviceName);
+            })
+            .ToArray();
     }
 
     private static string GetDisplayVersion()

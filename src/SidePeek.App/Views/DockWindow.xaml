@@ -18,12 +18,12 @@
         Opacity="0"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
-        RenderOptions.ClearTypeHint="Enabled"
+        RenderOptions.ClearTypeHint="Auto"
         TextElement.Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-        TextOptions.TextFormattingMode="Display"
-        TextOptions.TextRenderingMode="ClearType"
-        TextOptions.TextHintingMode="Fixed"
-        FontFamily="{x:Static sw:SystemFonts.MessageFontFamily}"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Grayscale"
+        TextOptions.TextHintingMode="Animated"
+        FontFamily="Segoe UI Variable Text, Segoe UI"
         Loaded="OnLoaded">
 
     <Window.Resources>
@@ -77,6 +77,34 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="HeaderToggleIconButton" TargetType="ToggleButton">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Margin" Value="2,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" CornerRadius="6" Background="Transparent">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Border x:Name="BackdropTintLayer">
@@ -100,6 +128,13 @@
                                Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <ToggleButton x:Name="PinToggle"
+                                  Style="{StaticResource HeaderToggleIconButton}"
+                                  Checked="OnPinToggled"
+                                  Unchecked="OnPinToggled"
+                                  ToolTip="固定窗口">
+                        <ui:SymbolIcon Symbol="Pin24" />
+                    </ToggleButton>
                     <Button Style="{StaticResource HeaderIconButton}" Click="OnOpenSettings" ToolTip="设置">
                         <ui:SymbolIcon Symbol="Settings24" />
                     </Button>
@@ -114,28 +149,32 @@
                                  GroupName="Tabs" IsChecked="True" Checked="OnTabChecked">
                         <StackPanel Orientation="Horizontal">
                             <ui:SymbolIcon Symbol="Note24" FontSize="18" Margin="0,0,6,0" />
-                            <TextBlock Text="便签" VerticalAlignment="Center" />
+                            <TextBlock Text="便签" VerticalAlignment="Center"
+                                       Style="{StaticResource CrispSmallTextBlock}" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton x:Name="TabCommands" Style="{StaticResource TabToggle}"
                                  GroupName="Tabs" Checked="OnTabChecked">
                         <StackPanel Orientation="Horizontal">
                             <ui:SymbolIcon Symbol="Rocket24" FontSize="18" Margin="0,0,6,0" />
-                            <TextBlock Text="命令" VerticalAlignment="Center" />
+                            <TextBlock Text="命令" VerticalAlignment="Center"
+                                       Style="{StaticResource CrispSmallTextBlock}" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton x:Name="TabWidgets" Style="{StaticResource TabToggle}"
                                  GroupName="Tabs" Checked="OnTabChecked">
                         <StackPanel Orientation="Horizontal">
                             <ui:SymbolIcon Symbol="Apps24" FontSize="18" Margin="0,0,6,0" />
-                            <TextBlock Text="工具" VerticalAlignment="Center" />
+                            <TextBlock Text="工具" VerticalAlignment="Center"
+                                       Style="{StaticResource CrispSmallTextBlock}" />
                         </StackPanel>
                     </RadioButton>
                     <RadioButton x:Name="TabClipboard" Style="{StaticResource TabToggle}"
                                  GroupName="Tabs" Checked="OnTabChecked">
                         <StackPanel Orientation="Horizontal">
                             <ui:SymbolIcon Symbol="Clipboard24" FontSize="18" Margin="0,0,6,0" />
-                            <TextBlock Text="剪切板" VerticalAlignment="Center" />
+                            <TextBlock Text="剪切板" VerticalAlignment="Center"
+                                       Style="{StaticResource CrispSmallTextBlock}" />
                         </StackPanel>
                     </RadioButton>
                 </UniformGrid>

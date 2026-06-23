@@ -14,11 +14,55 @@ public partial class NotesView : UserControl
     private NotesViewModel ViewModel => (NotesViewModel)DataContext;
     private Point _dragStart;
     private NoteItem? _dragItem;
+    private NoteItem? _pendingDeleteNote;
+    private DockWindow? _suspendedDock;
 
     public NotesView()
     {
         InitializeComponent();
         DataContext = new NotesViewModel();
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e) => ViewModel.Resume();
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        HideDeleteConfirm();
+        ViewModel.Pause();
+    }
+
+    private void OnDeleteNote(object sender, RoutedEventArgs e)
+    {
+        if ((sender as FrameworkElement)?.DataContext is not NoteItem note)
+            return;
+
+        _pendingDeleteNote = note;
+        string title = string.IsNullOrWhiteSpace(note.Title) ? "这条便签" : $"「{note.Title}」";
+        DeleteConfirmMessage.Text = $"确定要删除{title}吗？删除后无法恢复。";
+        DeleteConfirmOverlay.Visibility = Visibility.Visible;
+        _suspendedDock = Window.GetWindow(this) as DockWindow;
+        _suspendedDock?.SuspendDock();
+    }
+
+    private void OnCancelDelete(object sender, RoutedEventArgs e) => HideDeleteConfirm();
+
+    private void OnConfirmDelete(object sender, RoutedEventArgs e)
+    {
+        if (_pendingDeleteNote is not null)
+            ViewModel.Delete(_pendingDeleteNote);
+
+        HideDeleteConfirm();
+    }
+
+    private void HideDeleteConfirm()
+    {
+        if (DeleteConfirmOverlay.Visibility != Visibility.Visible)
+            return;
+
+        _pendingDeleteNote = null;
+        DeleteConfirmOverlay.Visibility = Visibility.Collapsed;
+        _suspendedDock?.ResumeDock();
+        _suspendedDock = null;
     }
 
     private void OnItemMouseDown(object sender, MouseButtonEventArgs e)

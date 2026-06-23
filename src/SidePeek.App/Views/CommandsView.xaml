@@ -11,6 +11,22 @@
     <UserControl.Resources>
         <conv:StringToBrushConverter x:Key="StringToBrush" />
 
+        <Style x:Key="CardDescriptionText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11.5" />
+            <Setter Property="LineHeight" Value="14" />
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="SnapsToDevicePixels" Value="True" />
+            <Setter Property="UseLayoutRounding" Value="True" />
+            <Setter Property="RenderOptions.ClearTypeHint" Value="Enabled" />
+            <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+            <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+            <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
+        </Style>
+
         <Style x:Key="CardRun" TargetType="Button">
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
@@ -41,9 +57,9 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Bd" CornerRadius="11" Background="Transparent">
-                            <TextBlock Text="&#xE712;" FontSize="13" HorizontalAlignment="Center"
+                            <TextBlock Text="&#x22EE;" FontSize="16" HorizontalAlignment="Center"
                                        VerticalAlignment="Center"
-                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                       FontFamily="Segoe UI Symbol, Segoe UI"
                                        Foreground="{TemplateBinding Foreground}" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -93,17 +109,16 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <Border Width="40" Height="40" CornerRadius="20" VerticalAlignment="Center"
+                                    <Border Width="32" Height="32" CornerRadius="16" VerticalAlignment="Center"
                                             Background="{Binding AccentHex, Converter={StaticResource StringToBrush}}">
-                                        <TextBlock Text="{Binding Glyph}" FontSize="18" Foreground="White"
+                                        <TextBlock Text="{Binding Glyph}" FontSize="14.5" Foreground="White"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                                    FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
                                     </Border>
-                                    <StackPanel Grid.Column="1" Margin="10,0,24,0" VerticalAlignment="Center">
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
                                         <TextBlock Text="{Binding Title}" FontSize="13.5" FontWeight="SemiBold"
                                                    Foreground="{DynamicResource TextFillColorPrimaryBrush}" TextTrimming="CharacterEllipsis" />
-                                        <TextBlock Text="{Binding Description}" FontSize="11" Margin="0,1,0,0"
-                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Description}" Style="{StaticResource CardDescriptionText}" />
                                     </StackPanel>
                                 </Grid>
                             </Button>

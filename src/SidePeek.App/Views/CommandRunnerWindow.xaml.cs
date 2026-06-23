@@ -10,6 +10,7 @@ namespace SidePeek.App.Views;
 public partial class CommandRunnerWindow : Window
 {
     private readonly CommandItem _item;
+    private static readonly Encoding ConsoleOutputEncoding = GetConsoleOutputEncoding();
 
     public CommandRunnerWindow(CommandItem item)
     {
@@ -57,8 +58,8 @@ public partial class CommandRunnerWindow : Window
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.UTF8,
-                StandardErrorEncoding = Encoding.UTF8
+                StandardOutputEncoding = ConsoleOutputEncoding,
+                StandardErrorEncoding = ConsoleOutputEncoding
             },
             EnableRaisingEvents = true
         };
@@ -85,6 +86,24 @@ public partial class CommandRunnerWindow : Window
             Output.AppendText(text);
             Scroller.ScrollToEnd();
         });
+    }
+
+    private static Encoding GetConsoleOutputEncoding()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+
+        uint codePage = SidePeek.App.Interop.NativeMethods.GetOEMCP();
+        if (codePage == 0)
+            return Encoding.UTF8;
+
+        try
+        {
+            return Encoding.GetEncoding((int)codePage);
+        }
+        catch (ArgumentException)
+        {
+            return Encoding.UTF8;
+        }
     }
 
     private void OnClose(object sender, RoutedEventArgs e) => Close();

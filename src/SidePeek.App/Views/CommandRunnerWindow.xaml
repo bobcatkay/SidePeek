@@ -4,10 +4,13 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:sw="clr-namespace:System.Windows;assembly=PresentationFramework"
         Title="执行命令"
-        Width="640" Height="460"
+        Width="1152" Height="828"
         WindowStartupLocation="CenterScreen"
         Topmost="True"
-        FontFamily="{x:Static sw:SystemFonts.MessageFontFamily}"
+        FontFamily="Segoe UI Variable Text, Segoe UI"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Grayscale"
+        TextOptions.TextHintingMode="Animated"
         Background="{DynamicResource ApplicationBackgroundBrush}">
     <Grid Margin="18">
         <Grid.RowDefinitions>
@@ -25,7 +28,10 @@
 
         <Border Grid.Row="1" CornerRadius="8" Background="#11141A">
             <ScrollViewer x:Name="Scroller" Padding="12" VerticalScrollBarVisibility="Auto">
-                <TextBox x:Name="Output" IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                <TextBox x:Name="Output" Style="{x:Null}" IsReadOnly="True" BorderThickness="0"
+                         Background="Transparent" FocusVisualStyle="{x:Null}"
+                         IsReadOnlyCaretVisible="False" SelectionBrush="#3A6BD6"
+                         SelectionOpacity="0.35"
                          Foreground="#D5DBE5" FontFamily="Cascadia Mono, Consolas, monospace"
                          FontSize="12.5" TextWrapping="Wrap" />
             </ScrollViewer>

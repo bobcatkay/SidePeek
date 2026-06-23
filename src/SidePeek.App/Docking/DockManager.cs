@@ -1,23 +1,25 @@
 using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
 using SidePeek.App.Interop;
 using SidePeek.App.Models;
+using Forms = System.Windows.Forms;
 
 namespace SidePeek.App.Docking;
 
 /// <summary>
 /// 负责把窗口吸附到屏幕某一边，并实现「悬停展开 / 移开自动收起」。
-/// 收起态：仅在停靠边中部露出一小段（屏幕长边的 12.5%、垂直/水平居中）的触发块。
+/// 收起态：仅在停靠边中部露出一小段（屏幕长边的 10%、垂直/水平居中）的触发块。
 /// 展开态：沿停靠边铺满工作区。展开/收起同时对位置与尺寸做缓动动画。
 /// </summary>
 public sealed class DockManager
 {
     private const double PanelThickness = 380;   // 左右停靠=宽度；上下停靠=高度
     private const double TriggerStrip = 6;        // 收起时露出的厚度（像素）
-    private const double CollapseRatio = 0.125;   // 收起时沿边长度占比
+    private const double CollapseRatio = 0.10;    // 收起时沿边长度占比
     private const double AnimationMs = 220;
 
     private readonly Window _window;
@@ -26,6 +28,7 @@ public sealed class DockManager
     private readonly Stopwatch _animClock = new();
 
     private DockEdge _edge = DockEdge.Right;
+    private string _displayDeviceName = string.Empty;
     private DockState _state = DockState.Hidden;
     private DateTime? _outsideSince;
     private bool _suspended;
@@ -48,13 +51,15 @@ public sealed class DockManager
     }
 
     public DockEdge Edge => _edge;
+    public string DisplayDeviceName => _displayDeviceName;
     public DockState State => _state;
     public int CollapseDelayMs { get; set; } = 450;
+    public bool IsPinned { get; set; }
     public event EventHandler<DockEdge>? EdgeChanged;
 
-    public void Start(DockEdge edge, bool startExpanded = false)
+    public void Start(DockEdge edge, string displayDeviceName, bool startExpanded = false)
     {
-        SetEdge(edge, startExpanded);
+        SetPlacement(edge, displayDeviceName, startExpanded);
         _pollTimer.Start();
     }
 
@@ -64,13 +69,19 @@ public sealed class DockManager
     public void Resume() => _suspended = false;
 
     public void SetEdge(DockEdge edge, bool expanded = false)
+        => SetPlacement(edge, _displayDeviceName, expanded);
+
+    public void SetPlacement(DockEdge edge, string displayDeviceName, bool expanded = false)
     {
+        bool edgeChanged = _edge != edge;
         _edge = edge;
+        _displayDeviceName = displayDeviceName ?? string.Empty;
         Layout();
         _outsideSince = null;
         _state = expanded ? DockState.Expanded : DockState.Hidden;
         ApplyRect(expanded ? _expandedRect : _collapsedRect, animate: false);
-        EdgeChanged?.Invoke(this, edge);
+        if (edgeChanged)
+            EdgeChanged?.Invoke(this, edge);
     }
 
     public void MoveToEdge(DockEdge edge)
@@ -92,7 +103,7 @@ public sealed class DockManager
 
     private void Layout()
     {
-        Rect wa = SystemParameters.WorkArea;
+        Rect wa = GetWorkArea();
 
         switch (_edge)
         {
@@ -146,6 +157,10 @@ public sealed class DockManager
         {
             if (_triggerRect.Contains(cursor))
                 Expand();
+        }
+        else if (IsPinned)
+        {
+            _outsideSince = null;
         }
         else
         {
@@ -224,6 +239,18 @@ public sealed class DockManager
 
     private static double Lerp(double a, double b, double k) => a + (b - a) * k;
 
+    private Rect GetWorkArea()
+    {
+        Forms.Screen? screen = Forms.Screen.AllScreens.FirstOrDefault(item =>
+            string.Equals(item.DeviceName, _displayDeviceName, StringComparison.OrdinalIgnoreCase));
+
+        screen ??= Forms.Screen.PrimaryScreen ?? Forms.Screen.AllScreens.FirstOrDefault();
+        if (screen is null)
+            return SystemParameters.WorkArea;
+
+        return ToDip(screen.WorkingArea);
+    }
+
     private Point ToDip(NativeMethods.POINT p)
     {
         var source = PresentationSource.FromVisual(_window);
@@ -235,5 +262,14 @@ public sealed class DockManager
             sy = m.M22;
         }
         return new Point(p.X * sx, p.Y * sy);
+    }
+
+    private Rect ToDip(System.Drawing.Rectangle r)
+    {
+        var source = PresentationSource.FromVisual(_window);
+        Matrix transform = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
+        Point topLeft = transform.Transform(new Point(r.Left, r.Top));
+        Point bottomRight = transform.Transform(new Point(r.Right, r.Bottom));
+        return new Rect(topLeft, bottomRight);
     }
 }

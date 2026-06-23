@@ -17,10 +17,10 @@
             <Setter Property="BorderThickness" Value="1" />
         </Style>
 
-        <Style x:Key="SettingLabel" TargetType="TextBlock">
+        <Style x:Key="SettingLabel" TargetType="TextBlock" BasedOn="{StaticResource CrispSmallTextBlock}">
             <Setter Property="FontSize" Value="13" />
             <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
         </Style>
     </UserControl.Resources>
 
@@ -34,6 +34,7 @@
             <TextBlock Text="设置" FontSize="20" FontWeight="SemiBold"
                        Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
             <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontSize="12"
+                       Style="{StaticResource CrispSmallTextBlock}"
                        HorizontalAlignment="Right" VerticalAlignment="Center"
                        Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
         </DockPanel>
@@ -43,6 +44,7 @@
                 <Border Style="{StaticResource SettingsGroup}">
                     <Grid>
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
@@ -56,14 +58,20 @@
                                    Margin="0,0,0,12"
                                    Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
 
-                        <TextBlock Grid.Row="1" Style="{StaticResource SettingLabel}" Text="停靠边" />
+                        <TextBlock Grid.Row="1" Style="{StaticResource SettingLabel}" Text="显示器" />
                         <ComboBox Grid.Row="1" Grid.Column="1"
+                                  ItemsSource="{Binding DockDisplays}"
+                                  SelectedItem="{Binding SelectedDockDisplay, Mode=TwoWay}"
+                                  DisplayMemberPath="Label" />
+
+                        <TextBlock Grid.Row="2" Style="{StaticResource SettingLabel}" Text="停靠边" Margin="0,12,0,0" />
+                        <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,12,0,0"
                                   ItemsSource="{Binding DockEdges}"
                                   SelectedItem="{Binding SelectedDockEdge, Mode=TwoWay}"
                                   DisplayMemberPath="Label" />
 
-                        <TextBlock Grid.Row="2" Style="{StaticResource SettingLabel}" Text="收起延时" Margin="0,12,0,0" />
-                        <Grid Grid.Row="2" Grid.Column="1" Margin="0,12,0,0">
+                        <TextBlock Grid.Row="3" Style="{StaticResource SettingLabel}" Text="收起延时" Margin="0,12,0,0" />
+                        <Grid Grid.Row="3" Grid.Column="1" Margin="0,12,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="70" />

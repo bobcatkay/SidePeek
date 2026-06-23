@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using SidePeek.App.Models;
+using Forms = System.Windows.Forms;
 
 namespace SidePeek.App.Services;
 
@@ -74,6 +76,10 @@ public static class SettingsService
         if (settings.DockEdge is not DockEdge.Left and not DockEdge.Right)
             settings.DockEdge = DockEdge.Right;
 
+        settings.DockDisplayDeviceName = (settings.DockDisplayDeviceName ?? string.Empty).Trim();
+        if (!IsKnownDisplay(settings.DockDisplayDeviceName))
+            settings.DockDisplayDeviceName = GetDefaultDisplayDeviceName();
+
         settings.CollapseDelayMs = Math.Clamp(
             settings.CollapseDelayMs,
             MinCollapseDelayMs,
@@ -92,6 +98,24 @@ public static class SettingsService
 
         if (!settings.Hotkey.Control && !settings.Hotkey.Alt && !settings.Hotkey.Shift)
             settings.Hotkey.Control = true;
+    }
+
+    private static bool IsKnownDisplay(string deviceName)
+    {
+        if (string.IsNullOrWhiteSpace(deviceName))
+            return false;
+
+        return Forms.Screen.AllScreens.Any(screen =>
+            string.Equals(screen.DeviceName, deviceName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string GetDefaultDisplayDeviceName()
+    {
+        Forms.Screen? primary = Forms.Screen.PrimaryScreen;
+        if (primary is not null)
+            return primary.DeviceName;
+
+        return Forms.Screen.AllScreens.FirstOrDefault()?.DeviceName ?? string.Empty;
     }
 
     private static HashSet<string> BuildSupportedHotkeyKeys()

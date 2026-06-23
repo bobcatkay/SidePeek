@@ -11,6 +11,24 @@
                 <ui:ControlsDictionary />
             </ResourceDictionary.MergedDictionaries>
             <BooleanToVisibilityConverter x:Key="BoolToVis" />
+            <Style x:Key="SmoothTextBlock" TargetType="{x:Type TextBlock}">
+                <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
+                <Setter Property="SnapsToDevicePixels" Value="False" />
+                <Setter Property="UseLayoutRounding" Value="False" />
+                <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
+                <Setter Property="TextOptions.TextRenderingMode" Value="Grayscale" />
+                <Setter Property="TextOptions.TextHintingMode" Value="Animated" />
+            </Style>
+            <Style x:Key="CrispSmallTextBlock" TargetType="{x:Type TextBlock}">
+                <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
+                <Setter Property="SnapsToDevicePixels" Value="True" />
+                <Setter Property="UseLayoutRounding" Value="True" />
+                <Setter Property="RenderOptions.ClearTypeHint" Value="Enabled" />
+                <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+                <Setter Property="TextOptions.TextRenderingMode" Value="ClearType" />
+                <Setter Property="TextOptions.TextHintingMode" Value="Fixed" />
+            </Style>
+            <Style TargetType="{x:Type TextBlock}" BasedOn="{StaticResource SmoothTextBlock}" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>
