@@ -17,7 +17,7 @@ namespace SidePeek.App.Docking;
 /// </summary>
 public sealed class DockManager
 {
-    private const double PanelThickness = 380;   // 左右停靠=宽度；上下停靠=高度
+    private const double PanelThickness = 420;   // 左右停靠=宽度；上下停靠=高度
     private const double TriggerStrip = 6;        // 收起时露出的厚度（像素）
     private const double CollapseRatio = 0.10;    // 收起时沿边长度占比
     private const double AnimationMs = 220;

@@ -8,6 +8,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\SidePeek.ico</ApplicationIcon>
     <AssemblyName>SidePeek</AssemblyName>
     <RootNamespace>SidePeek.App</RootNamespace>
     <Version>0.3.3</Version>

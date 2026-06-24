@@ -75,7 +75,7 @@
             </StackPanel>
         </DockPanel>
 
-        <StackPanel Grid.Row="1" Margin="0,0,4,12">
+        <StackPanel Grid.Row="1" Margin="0,0,0,12">
             <Border CornerRadius="12" Margin="0,0,0,10" Padding="18,14">
                 <Border.Background>
                     <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
@@ -108,7 +108,7 @@
             </Border>
         </StackPanel>
 
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="0,0,4,0"
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="0"
                       Visibility="{Binding ActiveVisibility}">
             <ItemsControl ItemsSource="{Binding Notes}">
                 <ItemsControl.ItemTemplate>
@@ -177,7 +177,7 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <DockPanel Margin="0,0,4,10">
+            <DockPanel Margin="0,0,0,10">
                 <TextBlock Text="已完成" FontSize="15" FontWeight="SemiBold" VerticalAlignment="Center"
                            Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                 <ComboBox DockPanel.Dock="Right" Width="112"
@@ -186,7 +186,7 @@
                           DisplayMemberPath="Label" />
             </DockPanel>
 
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0">
                 <ItemsControl ItemsSource="{Binding VisibleCompletedNotes}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
@@ -237,12 +237,13 @@
               Panel.ZIndex="20"
               Visibility="Collapsed"
               Background="#33000000">
-            <Border Width="306"
+            <Border x:Name="DeleteConfirmPanel"
+                    Width="306"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     CornerRadius="12"
                     Padding="18"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    Background="#FFFFFFFF"
                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                     BorderThickness="1">
                 <StackPanel>

@@ -1,8 +1,12 @@
 using System;
+using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using SidePeek.App.Models;
+using SidePeek.App.Services;
 using SidePeek.App.ViewModels;
 
 namespace SidePeek.App.Views;
@@ -10,13 +14,16 @@ namespace SidePeek.App.Views;
 public partial class CommandsView : UserControl
 {
     private readonly CommandsViewModel _viewModel = new();
+    private readonly ObservableCollection<RuntimeCommandParameter> _runtimeParameters = new();
     private Point _dragStart;
     private CommandItem? _dragItem;
+    private CommandItem? _pendingRunItem;
 
     public CommandsView()
     {
         InitializeComponent();
         DataContext = _viewModel;
+        ParameterPromptList.ItemsSource = _runtimeParameters;
     }
 
     private DockWindow? Host => Window.GetWindow(this) as DockWindow;
@@ -38,13 +45,24 @@ public partial class CommandsView : UserControl
 
     private void OnRun(object sender, RoutedEventArgs e)
     {
-        if (((FrameworkElement)sender).DataContext is not CommandItem item)
+        if ((sender as FrameworkElement)?.DataContext is not CommandItem item)
             return;
 
+        if (item.Parameters.Count > 0)
+        {
+            ShowParameterPrompt(item, (FrameworkElement)sender);
+            return;
+        }
+
+        RunCommand(item);
+    }
+
+    private void RunCommand(CommandItem item, string[]? commandLines = null)
+    {
         Host?.SuspendDock();
         try
         {
-            var runner = new CommandRunnerWindow(item) { Owner = Host };
+            var runner = new CommandRunnerWindow(item, commandLines) { Owner = Host };
             runner.ShowDialog();
         }
         finally
@@ -91,6 +109,107 @@ public partial class CommandsView : UserControl
         {
             Host?.ResumeDock();
         }
+    }
+
+    private void ShowParameterPrompt(CommandItem item, FrameworkElement target)
+    {
+        if (ParameterPromptLayer.Visibility == Visibility.Visible)
+            HideParameterPrompt();
+
+        _pendingRunItem = item;
+        _runtimeParameters.Clear();
+        for (int i = 0; i < item.Parameters.Count; i++)
+            _runtimeParameters.Add(new RuntimeCommandParameter(item.Parameters[i], i + 1));
+
+        ParameterPromptTitle.Text = "参数设置";
+        ParameterPromptError.Visibility = Visibility.Collapsed;
+        ApplyParameterPromptColors();
+        ParameterPromptLayer.Visibility = Visibility.Visible;
+        Host?.SuspendDock();
+        PositionParameterPrompt(target);
+    }
+
+    private void PositionParameterPrompt(FrameworkElement target)
+    {
+        CommandRoot.UpdateLayout();
+        ParameterPromptPanel.Margin = new Thickness(0);
+        ParameterPromptPanel.Measure(new Size(ParameterPromptPanel.Width, double.PositiveInfinity));
+
+        double panelHeight = ParameterPromptPanel.DesiredSize.Height;
+        Point targetPoint = target.TransformToAncestor(CommandRoot).Transform(new Point(0, 0));
+        const double gap = 8;
+
+        double belowTop = targetPoint.Y + target.ActualHeight + gap;
+        double aboveTop = targetPoint.Y - panelHeight - gap;
+        double top = belowTop + panelHeight <= CommandRoot.ActualHeight - gap
+            ? belowTop
+            : aboveTop;
+
+        double maxTop = Math.Max(gap, CommandRoot.ActualHeight - panelHeight - gap);
+        top = Math.Clamp(top, gap, maxTop);
+
+        ParameterPromptPanel.Margin = new Thickness(0, top, 0, 0);
+    }
+
+    private void OnCancelParameterPrompt(object sender, RoutedEventArgs e) => HideParameterPrompt();
+
+    private void OnConfirmParameterPrompt(object sender, RoutedEventArgs e)
+    {
+        if (_pendingRunItem is null)
+        {
+            HideParameterPrompt();
+            return;
+        }
+
+        var values = new string[_runtimeParameters.Count];
+        for (int i = 0; i < _runtimeParameters.Count; i++)
+        {
+            RuntimeCommandParameter parameter = _runtimeParameters[i];
+            if (parameter.RequiresChoice && parameter.SelectedChoice is null)
+            {
+                ShowParameterPromptError($"请选择 {parameter.Label}");
+                return;
+            }
+
+            values[i] = parameter.GetValue();
+        }
+
+        CommandItem item = _pendingRunItem;
+        string[] commandLines = item.BuildCommandLines(values);
+        HideParameterPrompt(resumeDock: false);
+
+        try
+        {
+            var runner = new CommandRunnerWindow(item, commandLines) { Owner = Host };
+            runner.ShowDialog();
+        }
+        finally
+        {
+            Host?.ResumeDock();
+        }
+    }
+
+    private void HideParameterPrompt(bool resumeDock = true)
+    {
+        ParameterPromptLayer.Visibility = Visibility.Collapsed;
+        _pendingRunItem = null;
+        _runtimeParameters.Clear();
+        if (resumeDock)
+            Host?.ResumeDock();
+    }
+
+    private void ShowParameterPromptError(string message)
+    {
+        ParameterPromptError.Text = message;
+        ParameterPromptError.Visibility = Visibility.Visible;
+    }
+
+    private void ApplyParameterPromptColors()
+    {
+        bool isLightTheme = ThemeService.IsLightTheme(SettingsService.Current.Theme);
+        ParameterPromptPanel.Background = new SolidColorBrush(isLightTheme
+            ? Colors.White
+            : Color.FromRgb(0x24, 0x28, 0x30));
     }
 
     private void Delete(CommandItem item)
@@ -153,5 +272,41 @@ public partial class CommandsView : UserControl
             return;
 
         Delete(item);
+    }
+
+    private sealed class RuntimeCommandParameter
+    {
+        private readonly CommandParameterDefinition _definition;
+
+        public RuntimeCommandParameter(CommandParameterDefinition definition, int index)
+        {
+            _definition = definition;
+            string label = string.IsNullOrWhiteSpace(definition.Label)
+                ? $"参数 {index}"
+                : definition.Label;
+            Label = $"%{index}  {label}";
+            Value = definition.Mode == CommandParameterMode.Prompt
+                ? definition.PromptDefaultValue
+                : string.Empty;
+            SelectedChoice = definition.Mode == CommandParameterMode.Choices
+                ? definition.Choices.FirstOrDefault(choice => choice.IsDefault) ?? definition.Choices.FirstOrDefault()
+                : null;
+        }
+
+        public string Label { get; }
+        public string Value { get; set; }
+        public CommandParameterChoice? SelectedChoice { get; set; }
+        public ObservableCollection<CommandParameterChoice> Choices => _definition.Choices;
+        public bool RequiresChoice => _definition.Mode == CommandParameterMode.Choices;
+        public Visibility InputVisibility => _definition.Mode == CommandParameterMode.Prompt
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        public Visibility ChoiceVisibility => _definition.Mode == CommandParameterMode.Choices
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        public string GetValue() => _definition.Mode == CommandParameterMode.Choices
+            ? SelectedChoice?.Value ?? string.Empty
+            : Value;
     }
 }

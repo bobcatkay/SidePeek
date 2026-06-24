@@ -74,9 +74,36 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <Style x:Key="RuntimeChoiceItem" TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="0,4,0,0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Bd" CornerRadius="7" Padding="8,6" Background="Transparent">
+                            <RadioButton Content="{Binding Label}"
+                                         IsChecked="{Binding IsSelected, RelativeSource={RelativeSource TemplatedParent}}"
+                                         IsHitTestVisible="False"
+                                         Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
-    <Grid>
+    <Grid x:Name="CommandRoot">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -89,7 +116,7 @@
                        Icon="{ui:SymbolIcon Add24}" Content="添加" Click="OnAdd" />
         </DockPanel>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,4,0">
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0">
             <ItemsControl ItemsSource="{Binding Commands}" VerticalAlignment="Top">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -98,7 +125,7 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Grid Height="78" Margin="0,0,8,8" AllowDrop="True"
+                        <Grid Height="78" Margin="4,0,4,8" AllowDrop="True"
                               PreviewMouseLeftButtonDown="OnItemMouseDown"
                               PreviewMouseMove="OnItemMouseMove"
                               DragOver="OnItemDragOver"
@@ -109,9 +136,9 @@
                                         <ColumnDefinition Width="Auto" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <Border Width="32" Height="32" CornerRadius="16" VerticalAlignment="Center"
+                                    <Border Width="40" Height="40" CornerRadius="20" VerticalAlignment="Center"
                                             Background="{Binding AccentHex, Converter={StaticResource StringToBrush}}">
-                                        <TextBlock Text="{Binding Glyph}" FontSize="14.5" Foreground="White"
+                                        <TextBlock Text="{Binding Glyph}" FontSize="18.125" Foreground="White"
                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
                                                    FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets" />
                                     </Border>
@@ -130,5 +157,81 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
+
+        <Grid x:Name="ParameterPromptLayer"
+              Grid.RowSpan="2"
+              Panel.ZIndex="40"
+              Visibility="Collapsed"
+              Background="#33000000">
+            <Border x:Name="ParameterPromptPanel"
+                    Width="320"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    Padding="14"
+                    CornerRadius="10"
+                    Background="#FFFFFFFF"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                <StackPanel>
+                    <TextBlock x:Name="ParameterPromptTitle"
+                               Text="参数设置"
+                               FontSize="15"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Stretch"
+                               TextAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+
+                    <ScrollViewer Margin="0,10,0,0"
+                                  MaxHeight="360"
+                                  VerticalScrollBarVisibility="Auto">
+                        <ItemsControl x:Name="ParameterPromptList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,10">
+                                        <TextBlock Text="{Binding Label}"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                        <ui:TextBox Margin="0,4,0,0"
+                                                    Text="{Binding Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                    Visibility="{Binding InputVisibility}" />
+                                        <ListBox Margin="0,4,0,0"
+                                                 ItemsSource="{Binding Choices}"
+                                                 SelectedItem="{Binding SelectedChoice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                 ItemContainerStyle="{StaticResource RuntimeChoiceItem}"
+                                                 BorderThickness="0"
+                                                 Background="Transparent"
+                                                 Visibility="{Binding ChoiceVisibility}">
+                                            <ListBox.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <UniformGrid Columns="2" />
+                                                </ItemsPanelTemplate>
+                                            </ListBox.ItemsPanel>
+                                        </ListBox>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+
+                    <TextBlock x:Name="ParameterPromptError"
+                               Foreground="#E53935"
+                               FontSize="12"
+                               Visibility="Collapsed" />
+
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Margin="0,12,0,0">
+                        <ui:Button Content="取消"
+                                   MinWidth="72"
+                                   Margin="0,0,10,0"
+                                   Click="OnCancelParameterPrompt" />
+                        <ui:Button Content="执行"
+                                   Appearance="Primary"
+                                   MinWidth="72"
+                                   Click="OnConfirmParameterPrompt" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

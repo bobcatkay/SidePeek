@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using SidePeek.App.Models;
+using SidePeek.App.Services;
 using SidePeek.App.ViewModels;
 
 namespace SidePeek.App.Views;
@@ -39,6 +40,7 @@ public partial class NotesView : UserControl
         _pendingDeleteNote = note;
         string title = string.IsNullOrWhiteSpace(note.Title) ? "这条便签" : $"「{note.Title}」";
         DeleteConfirmMessage.Text = $"确定要删除{title}吗？删除后无法恢复。";
+        ApplyDeleteConfirmColors();
         DeleteConfirmOverlay.Visibility = Visibility.Visible;
         _suspendedDock = Window.GetWindow(this) as DockWindow;
         _suspendedDock?.SuspendDock();
@@ -63,6 +65,14 @@ public partial class NotesView : UserControl
         DeleteConfirmOverlay.Visibility = Visibility.Collapsed;
         _suspendedDock?.ResumeDock();
         _suspendedDock = null;
+    }
+
+    private void ApplyDeleteConfirmColors()
+    {
+        bool isLightTheme = ThemeService.IsLightTheme(SettingsService.Current.Theme);
+        DeleteConfirmPanel.Background = new SolidColorBrush(isLightTheme
+            ? Colors.White
+            : Color.FromRgb(0x24, 0x28, 0x30));
     }
 
     private void OnItemMouseDown(object sender, MouseButtonEventArgs e)

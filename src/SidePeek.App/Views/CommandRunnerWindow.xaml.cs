@@ -10,19 +10,21 @@ namespace SidePeek.App.Views;
 public partial class CommandRunnerWindow : Window
 {
     private readonly CommandItem _item;
+    private readonly string[]? _commandLines;
     private static readonly Encoding ConsoleOutputEncoding = GetConsoleOutputEncoding();
 
-    public CommandRunnerWindow(CommandItem item)
+    public CommandRunnerWindow(CommandItem item, string[]? commandLines = null)
     {
         InitializeComponent();
         _item = item;
+        _commandLines = commandLines;
         HeaderText.Text = $"正在执行：{item.Title}";
         Loaded += async (_, _) => await RunAllAsync();
     }
 
     private async Task RunAllAsync()
     {
-        string[] lines = _item.CommandLines;
+        string[] lines = _commandLines ?? _item.CommandLines;
         int index = 0;
 
         foreach (string line in lines)

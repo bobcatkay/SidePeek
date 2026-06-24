@@ -31,6 +31,7 @@ public class CommandsViewModel
         target.Glyph = source.Glyph;
         target.AccentHex = source.AccentHex;
         target.CommandText = source.CommandText;
+        target.Parameters = CloneParameters(source.Parameters);
         Persist();
     }
 
@@ -65,6 +66,38 @@ public class CommandsViewModel
     }
 
     public void Persist() => JsonStore.Save(FileName, Commands.ToList());
+
+    public static ObservableCollection<CommandParameterDefinition> CloneParameters(
+        IEnumerable<CommandParameterDefinition>? parameters)
+    {
+        var clones = new ObservableCollection<CommandParameterDefinition>();
+        if (parameters is null)
+            return clones;
+
+        foreach (CommandParameterDefinition parameter in parameters)
+        {
+            var clone = new CommandParameterDefinition
+            {
+                Label = parameter.Label,
+                PromptDefaultValue = parameter.PromptDefaultValue
+            };
+
+            foreach (CommandParameterChoice choice in parameter.Choices)
+            {
+                clone.Choices.Add(new CommandParameterChoice
+                {
+                    Label = choice.Label,
+                    Value = choice.Value,
+                    IsDefault = choice.IsDefault
+                });
+            }
+
+            clone.Mode = parameter.Mode;
+            clones.Add(clone);
+        }
+
+        return clones;
+    }
 
     private static List<CommandItem> Defaults() => new()
     {

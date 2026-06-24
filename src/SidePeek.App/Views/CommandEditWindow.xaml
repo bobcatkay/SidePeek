@@ -5,7 +5,7 @@
         xmlns:svc="clr-namespace:SidePeek.App.Services"
         xmlns:sw="clr-namespace:System.Windows;assembly=PresentationFramework"
         Title="命令"
-        Width="440" SizeToContent="Height"
+        Width="540" SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize" Topmost="True"
         FontFamily="Segoe UI Variable Text, Segoe UI"
@@ -99,6 +99,148 @@
                     AcceptsReturn="True" TextWrapping="Wrap" MinHeight="90" MaxHeight="160"
                     VerticalScrollBarVisibility="Auto"
                     PlaceholderText="echo hello&#x0a;ping 127.0.0.1 -n 1" />
+
+        <Grid Margin="0,12,0,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="参数" VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <ui:Button Content="+"
+                           MinWidth="34"
+                           Padding="0"
+                           Margin="10,0,0,0"
+                           Click="OnAddParameter"
+                           ToolTip="增加参数" />
+            </StackPanel>
+            <TextBlock Grid.Column="1"
+                       Text="命令中按顺序使用 %1、%2、%3 引用参数。"
+                       FontSize="11"
+                       HorizontalAlignment="Right"
+                       VerticalAlignment="Center"
+                       Margin="12,0,0,0"
+                       Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+        </Grid>
+
+        <ScrollViewer MaxHeight="250"
+                      VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Parameters}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Margin="0,8,0,0"
+                                Padding="10"
+                                CornerRadius="8"
+                                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="155" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:TextBox Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}"
+                                                PlaceholderText="参数名称" />
+                                    <ui:Button Grid.Column="2"
+                                               Appearance="Transparent"
+                                               Padding="4"
+                                               Margin="10,0,0,0"
+                                               Icon="{ui:SymbolIcon Delete24}"
+                                               Click="OnRemoveParameter"
+                                               ToolTip="删除参数" />
+                                    <StackPanel Grid.Row="1"
+                                                Grid.ColumnSpan="3"
+                                                Orientation="Horizontal"
+                                                Margin="0,8,0,0">
+                                        <RadioButton Content="执行时输入"
+                                                     Margin="0,0,14,0"
+                                                     IsChecked="{Binding IsPrompt, Mode=TwoWay}" />
+                                        <RadioButton Content="候选值"
+                                                     IsChecked="{Binding UsesChoices, Mode=TwoWay}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <Border Margin="0,8,0,0"
+                                        Visibility="{Binding IsPrompt, Converter={StaticResource BoolToVis}}">
+                                    <StackPanel>
+                                        <TextBlock Text="默认值"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                        <ui:TextBox Margin="0,4,0,0"
+                                                    Text="{Binding PromptDefaultValue, UpdateSourceTrigger=PropertyChanged}"
+                                                    PlaceholderText="可选，执行时自动填入" />
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Margin="0,8,0,0"
+                                        Visibility="{Binding UsesChoices, Converter={StaticResource BoolToVis}}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="候选值"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                            <TextBlock Text="（☑️设置默认值）"
+                                                       FontSize="11"
+                                                       Margin="4,0,0,0"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                            <ui:Button Content="+"
+                                                       MinWidth="30"
+                                                       Padding="0"
+                                                       Margin="10,0,0,0"
+                                                       Click="OnAddChoice"
+                                                       ToolTip="增加候选值" />
+                                        </StackPanel>
+                                        <ItemsControl ItemsSource="{Binding Choices}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,6,0,0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <CheckBox VerticalAlignment="Center"
+                                                                  Margin="0,0,8,0"
+                                                                  ToolTip="默认值"
+                                                                  IsChecked="{Binding IsDefault, Mode=TwoWay}"
+                                                                  Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                  Checked="OnDefaultChoiceChecked" />
+                                                        <ui:TextBox Grid.Column="1"
+                                                                    PlaceholderText="标签"
+                                                                    Text="{Binding Label, UpdateSourceTrigger=PropertyChanged}" />
+                                                        <ui:TextBox Grid.Column="2"
+                                                                    Margin="8,0,0,0"
+                                                                    PlaceholderText="值"
+                                                                    Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" />
+                                                        <ui:Button Grid.Column="3"
+                                                                   Margin="8,0,0,0"
+                                                                   Appearance="Transparent"
+                                                                   Padding="4"
+                                                                   Icon="{ui:SymbolIcon Delete24}"
+                                                                   Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                   Click="OnRemoveChoice"
+                                                                   ToolTip="删除候选值" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
 
         <TextBlock x:Name="ErrorText" Foreground="#E53935" Margin="0,10,0,0" Visibility="Collapsed" />
 
