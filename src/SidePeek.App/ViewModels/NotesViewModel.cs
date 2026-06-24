@@ -154,7 +154,9 @@ public partial class NotesViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void CompleteNote(NoteItem? note)
+    private void CompleteNote(NoteItem? note) => Complete(note);
+
+    public void Complete(NoteItem? note)
     {
         if (note is null)
             return;

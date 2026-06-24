@@ -7,7 +7,8 @@
              d:DataContext="{d:DesignInstance vm:WidgetsViewModel}"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              mc:Ignorable="d"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             Unloaded="OnUnloaded">
     <UserControl.Resources>
         <conv:StringToBrushConverter x:Key="StringToBrush" />
 
@@ -76,7 +77,7 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid>
+    <Grid x:Name="WidgetsRoot">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -90,7 +91,9 @@
         </DockPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0">
-            <ItemsControl ItemsSource="{Binding Tools}" VerticalAlignment="Top">
+            <ItemsControl x:Name="ToolsItemsControl"
+                          ItemsSource="{Binding Tools}"
+                          VerticalAlignment="Top">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
                         <UniformGrid Columns="2" />
@@ -99,11 +102,15 @@
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Grid Height="78" Margin="4,0,4,8" AllowDrop="True"
+                              Background="Transparent"
+                              Cursor="Hand"
                               PreviewMouseLeftButtonDown="OnItemMouseDown"
                               PreviewMouseMove="OnItemMouseMove"
-                              DragOver="OnItemDragOver"
-                              Drop="OnItemDrop">
-                            <Button Style="{StaticResource CardRun}" Click="OnLaunchTool" ToolTip="点击启动">
+                              PreviewMouseLeftButtonUp="OnItemMouseUp"
+                              ToolTip="点击启动">
+                            <Button Style="{StaticResource CardRun}"
+                                    Focusable="False"
+                                    IsHitTestVisible="False">
                                 <Grid Margin="12,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
@@ -130,5 +137,58 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
+
+        <Canvas x:Name="DragOverlay"
+                Grid.RowSpan="2"
+                Panel.ZIndex="30"
+                IsHitTestVisible="False"
+                ClipToBounds="False" />
+
+        <Grid x:Name="DeleteConfirmOverlay"
+              Grid.RowSpan="2"
+              Panel.ZIndex="40"
+              Visibility="Collapsed"
+              Background="#33000000">
+            <Border x:Name="DeleteConfirmPanel"
+                    Width="306"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    CornerRadius="12"
+                    Padding="18"
+                    Background="#FFFFFFFF"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <ui:SymbolIcon Symbol="Delete24"
+                                       FontSize="20"
+                                       Margin="0,0,8,0"
+                                       Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                        <TextBlock x:Name="DeleteConfirmTitle"
+                                   Text="删除工具"
+                                   FontSize="16"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    </StackPanel>
+                    <TextBlock x:Name="DeleteConfirmMessage"
+                               Text="确定要删除这个工具吗？删除后无法恢复。"
+                               TextWrapping="Wrap"
+                               Style="{StaticResource CrispSmallTextBlock}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Right"
+                                Margin="0,18,0,0">
+                        <ui:Button Content="取消"
+                                   MinWidth="72"
+                                   Margin="0,0,10,0"
+                                   Click="OnCancelDelete" />
+                        <ui:Button Content="删除"
+                                   Appearance="Primary"
+                                   MinWidth="72"
+                                   Click="OnConfirmDelete" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

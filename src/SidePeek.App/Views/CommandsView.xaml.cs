@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using SidePeek.App.Models;
@@ -16,14 +17,27 @@ public partial class CommandsView : UserControl
     private readonly CommandsViewModel _viewModel = new();
     private readonly ObservableCollection<RuntimeCommandParameter> _runtimeParameters = new();
     private Point _dragStart;
-    private CommandItem? _dragItem;
+    private DragSortController<CommandItem> _dragSort = null!;
+    private bool _suppressItemClick;
     private CommandItem? _pendingRunItem;
+    private CommandItem? _pendingDeleteItem;
 
     public CommandsView()
     {
         InitializeComponent();
         DataContext = _viewModel;
         ParameterPromptList.ItemsSource = _runtimeParameters;
+        _dragSort = new DragSortController<CommandItem>(
+            CommandRoot,
+            DragOverlay,
+            CommandsItemsControl,
+            (source, target) => _viewModel.Move(source, target));
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        HideDeleteConfirm();
+        _dragSort.Cancel();
     }
 
     private DockWindow? Host => Window.GetWindow(this) as DockWindow;
@@ -48,9 +62,14 @@ public partial class CommandsView : UserControl
         if ((sender as FrameworkElement)?.DataContext is not CommandItem item)
             return;
 
+        RunOrPrompt(item, (FrameworkElement)sender);
+    }
+
+    private void RunOrPrompt(CommandItem item, FrameworkElement target)
+    {
         if (item.Parameters.Count > 0)
         {
-            ShowParameterPrompt(item, (FrameworkElement)sender);
+            ShowParameterPrompt(item, target);
             return;
         }
 
@@ -214,30 +233,59 @@ public partial class CommandsView : UserControl
 
     private void Delete(CommandItem item)
     {
+        _pendingDeleteItem = item;
+        string title = string.IsNullOrWhiteSpace(item.Title) ? "这条命令" : $"命令「{item.Title}」";
+        DeleteConfirmMessage.Text = $"确定要删除{title}吗？删除后无法恢复。";
+        ApplyDeleteConfirmColors();
+        DeleteConfirmOverlay.Visibility = Visibility.Visible;
         Host?.SuspendDock();
-        try
-        {
-            var result = MessageBox.Show(
-                $"确定要删除命令「{item.Title}」吗？", "删除确认",
-                MessageBoxButton.YesNo, MessageBoxImage.Warning);
-            if (result == MessageBoxResult.Yes)
-                _viewModel.Remove(item);
-        }
-        finally
-        {
-            Host?.ResumeDock();
-        }
+    }
+
+    private void OnCancelDelete(object sender, RoutedEventArgs e) => HideDeleteConfirm();
+
+    private void OnConfirmDelete(object sender, RoutedEventArgs e)
+    {
+        if (_pendingDeleteItem is not null)
+            _viewModel.Remove(_pendingDeleteItem);
+
+        HideDeleteConfirm();
+    }
+
+    private void HideDeleteConfirm()
+    {
+        if (DeleteConfirmOverlay.Visibility != Visibility.Visible)
+            return;
+
+        _pendingDeleteItem = null;
+        DeleteConfirmOverlay.Visibility = Visibility.Collapsed;
+        Host?.ResumeDock();
+    }
+
+    private void ApplyDeleteConfirmColors()
+    {
+        bool isLightTheme = ThemeService.IsLightTheme(SettingsService.Current.Theme);
+        DeleteConfirmPanel.Background = new SolidColorBrush(isLightTheme
+            ? Colors.White
+            : Color.FromRgb(0x24, 0x28, 0x30));
     }
 
     private void OnItemMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (IsButtonElement(e.OriginalSource as DependencyObject))
+        {
+            _dragSort.Cancel();
+            return;
+        }
+
+        _suppressItemClick = false;
         _dragStart = e.GetPosition(this);
-        _dragItem = ((FrameworkElement)sender).DataContext as CommandItem;
+        if (((FrameworkElement)sender).DataContext is CommandItem item)
+            _dragSort.BeginCandidate(item, (FrameworkElement)sender, e.GetPosition(CommandRoot));
     }
 
     private void OnItemMouseMove(object sender, MouseEventArgs e)
     {
-        if (e.LeftButton != MouseButtonState.Pressed || _dragItem is null)
+        if (e.LeftButton != MouseButtonState.Pressed)
             return;
 
         Point current = e.GetPosition(this);
@@ -245,25 +293,30 @@ public partial class CommandsView : UserControl
             Math.Abs(current.Y - _dragStart.Y) < SystemParameters.MinimumVerticalDragDistance)
             return;
 
-        DragDrop.DoDragDrop((DependencyObject)sender, _dragItem, DragDropEffects.Move);
-        _dragItem = null;
-    }
-
-    private void OnItemDragOver(object sender, DragEventArgs e)
-    {
-        e.Effects = e.Data.GetDataPresent(typeof(CommandItem)) ? DragDropEffects.Move : DragDropEffects.None;
-        e.Handled = true;
-    }
-
-    private void OnItemDrop(object sender, DragEventArgs e)
-    {
-        if (e.Data.GetData(typeof(CommandItem)) is CommandItem source &&
-            ((FrameworkElement)sender).DataContext is CommandItem target)
+        if (_dragSort.TryStart(e.GetPosition(CommandRoot)))
         {
-            _viewModel.Move(source, target);
+            _suppressItemClick = true;
+            e.Handled = true;
+        }
+    }
+
+    private void OnItemMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_suppressItemClick || _dragSort.IsDragging)
+        {
+            _suppressItemClick = false;
+            e.Handled = true;
+            return;
         }
 
-        e.Handled = true;
+        if (IsButtonElement(e.OriginalSource as DependencyObject))
+            return;
+
+        if (((FrameworkElement)sender).DataContext is CommandItem item)
+        {
+            RunOrPrompt(item, (FrameworkElement)sender);
+            e.Handled = true;
+        }
     }
 
     private void OnDelete(object sender, RoutedEventArgs e)
@@ -308,5 +361,18 @@ public partial class CommandsView : UserControl
         public string GetValue() => _definition.Mode == CommandParameterMode.Choices
             ? SelectedChoice?.Value ?? string.Empty
             : Value;
+    }
+
+    private static bool IsButtonElement(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source is ButtonBase)
+                return true;
+
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return false;
     }
 }

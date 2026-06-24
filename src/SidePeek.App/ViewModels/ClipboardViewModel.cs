@@ -18,6 +18,8 @@ public partial class ClipboardViewModel : IDisposable
     private readonly DispatcherTimer _timer;
     private string? _lastText;
 
+    public event EventHandler? CopySucceeded;
+
     public ObservableCollection<ClipboardItem> Items { get; }
 
     public ClipboardViewModel()
@@ -47,6 +49,7 @@ public partial class ClipboardViewModel : IDisposable
         {
             Clipboard.SetText(item.Text);
             _lastText = item.Text;
+            CopySucceeded?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
         {

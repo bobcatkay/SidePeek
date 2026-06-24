@@ -53,7 +53,7 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid>
+    <Grid x:Name="NotesRoot">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -64,9 +64,14 @@
             <TextBlock Text="便签" FontSize="20" FontWeight="SemiBold" VerticalAlignment="Center"
                        Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
-                <ToggleButton Style="{StaticResource HeaderToggleIconButton}"
+                <ToggleButton x:Name="HistoryToggle"
+                              Style="{StaticResource HeaderToggleIconButton}"
                               IsChecked="{Binding ShowCompleted, Mode=TwoWay}"
-                              ToolTip="已完成">
+                              ToolTip="已完成"
+                              RenderTransformOrigin="0.5,0.5">
+                    <ToggleButton.RenderTransform>
+                        <ScaleTransform x:Name="HistoryToggleScale" />
+                    </ToggleButton.RenderTransform>
                     <ui:SymbolIcon Symbol="History24" />
                 </ToggleButton>
                 <ui:Button Appearance="Primary"
@@ -110,14 +115,13 @@
 
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="0"
                       Visibility="{Binding ActiveVisibility}">
-            <ItemsControl ItemsSource="{Binding Notes}">
+            <ItemsControl x:Name="NotesItemsControl"
+                          ItemsSource="{Binding Notes}">
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
                         <Border Margin="0,0,0,10" CornerRadius="10" AllowDrop="True"
                                 PreviewMouseLeftButtonDown="OnItemMouseDown"
                                 PreviewMouseMove="OnItemMouseMove"
-                                DragOver="OnItemDragOver"
-                                Drop="OnItemDrop"
                                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                             <Grid>
@@ -145,8 +149,7 @@
                                             <ui:Button Appearance="Transparent" Padding="6"
                                                        Icon="{ui:SymbolIcon CheckmarkCircle24}"
                                                        ToolTip="完成"
-                                                       Command="{Binding DataContext.CompleteNoteCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                       CommandParameter="{Binding}" />
+                                                       Click="OnCompleteNote" />
                                             <ui:Button Appearance="Transparent" Padding="6"
                                                        Icon="{ui:SymbolIcon Delete24}"
                                                        ToolTip="删除"
@@ -232,9 +235,21 @@
             </ScrollViewer>
         </Grid>
 
+        <Canvas x:Name="CompletionAnimationLayer"
+                Grid.RowSpan="3"
+                Panel.ZIndex="30"
+                IsHitTestVisible="False"
+                ClipToBounds="False" />
+
+        <Canvas x:Name="DragOverlay"
+                Grid.RowSpan="3"
+                Panel.ZIndex="35"
+                IsHitTestVisible="False"
+                ClipToBounds="False" />
+
         <Grid x:Name="DeleteConfirmOverlay"
               Grid.RowSpan="3"
-              Panel.ZIndex="20"
+              Panel.ZIndex="40"
               Visibility="Collapsed"
               Background="#33000000">
             <Border x:Name="DeleteConfirmPanel"
