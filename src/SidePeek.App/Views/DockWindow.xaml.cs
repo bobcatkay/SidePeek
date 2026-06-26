@@ -12,13 +12,14 @@ using SidePeek.App.Services;
 
 namespace SidePeek.App.Views;
 
-public partial class DockWindow : Window
+public partial class DockWindow : Window, IDockViewport
 {
     private const int HotkeyId = 0xB001;
     private const int AcrylicAccentFlags = 2;
 
     private DockManager? _dock;
     private IntPtr _hwnd;
+    private readonly TranslateTransform _dockViewportTransform = new();
 
     private NotesView? _notesView;
     private CommandsView? _commandsView;
@@ -47,6 +48,18 @@ public partial class DockWindow : Window
         ContentHost.Content = _settingsView ??= new SettingsView();
         _dock?.Reveal();
         Activate();
+    }
+
+    public void SetDockViewport(Rect expandedRect, Rect viewportRect)
+    {
+        BackdropTintLayer.Width = Math.Max(1, expandedRect.Width);
+        BackdropTintLayer.Height = Math.Max(1, expandedRect.Height);
+        BackdropTintLayer.HorizontalAlignment = HorizontalAlignment.Left;
+        BackdropTintLayer.VerticalAlignment = VerticalAlignment.Top;
+        BackdropTintLayer.RenderTransform = _dockViewportTransform;
+
+        _dockViewportTransform.X = expandedRect.Left - viewportRect.Left;
+        _dockViewportTransform.Y = expandedRect.Top - viewportRect.Top;
     }
 
     protected override void OnSourceInitialized(EventArgs e)

@@ -28,6 +28,7 @@ public class CommandsViewModel
     {
         target.Title = source.Title;
         target.Description = source.Description;
+        target.SilentExecution = source.SilentExecution;
         target.Glyph = source.Glyph;
         target.AccentHex = source.AccentHex;
         target.CommandText = source.CommandText;

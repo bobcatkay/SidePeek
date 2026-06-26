@@ -130,11 +130,20 @@
                     <DataTemplate>
                         <Grid Height="78" Margin="4,0,4,8" AllowDrop="True"
                               Background="Transparent"
-                              Cursor="Hand"
                               PreviewMouseLeftButtonDown="OnItemMouseDown"
                               PreviewMouseMove="OnItemMouseMove"
                               PreviewMouseLeftButtonUp="OnItemMouseUp"
                               ToolTip="点击执行">
+                            <Grid.Style>
+                                <Style TargetType="Grid">
+                                    <Setter Property="Cursor" Value="Hand" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsRunning}" Value="True">
+                                            <Setter Property="Cursor" Value="Arrow" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Grid.Style>
                             <Button Style="{StaticResource CardRun}"
                                     Focusable="False"
                                     IsHitTestVisible="False">
@@ -159,6 +168,21 @@
                             <Button Style="{StaticResource CardMenu}" HorizontalAlignment="Right"
                                     VerticalAlignment="Top" Margin="0,6,6,0"
                                     Click="OnItemMenu" ToolTip="更多" />
+                            <Border Panel.ZIndex="5"
+                                    Width="38"
+                                    Height="38"
+                                    CornerRadius="19"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}"
+                                    IsHitTestVisible="False">
+                                <ui:ProgressRing Width="20"
+                                                 Height="20"
+                                                 IsIndeterminate="True" />
+                            </Border>
                         </Grid>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
@@ -293,5 +317,42 @@
                 </StackPanel>
             </Border>
         </Grid>
+
+        <Border x:Name="CommandResultToast"
+                Grid.RowSpan="2"
+                Panel.ZIndex="60"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Top"
+                Margin="0,4,0,0"
+                Padding="12,8"
+                CornerRadius="10"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                Opacity="0"
+                Visibility="Collapsed"
+                IsHitTestVisible="False">
+            <Border.RenderTransform>
+                <TranslateTransform Y="-8" />
+            </Border.RenderTransform>
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon x:Name="CommandSuccessToastIcon"
+                               Symbol="CheckmarkCircle24"
+                               FontSize="16"
+                               Margin="0,0,6,0"
+                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                <ui:SymbolIcon x:Name="CommandFailureToastIcon"
+                               Symbol="DismissCircle24"
+                               FontSize="16"
+                               Margin="0,0,6,0"
+                               Foreground="#E53935"
+                               Visibility="Collapsed" />
+                <TextBlock x:Name="CommandResultToastText"
+                           Text="执行成功"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+            </StackPanel>
+        </Border>
     </Grid>
 </UserControl>

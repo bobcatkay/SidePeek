@@ -23,6 +23,7 @@ public sealed class DockManager
     private const double AnimationMs = 220;
 
     private readonly Window _window;
+    private readonly IDockViewport? _viewport;
     private readonly DispatcherTimer _pollTimer;
     private readonly DispatcherTimer _animTimer;
     private readonly Stopwatch _animClock = new();
@@ -36,6 +37,7 @@ public sealed class DockManager
     private Rect _expandedRect;
     private Rect _collapsedRect;
     private Rect _triggerRect;
+    private Rect _workArea;
 
     private Rect _fromRect;
     private Rect _toRect;
@@ -43,6 +45,7 @@ public sealed class DockManager
     public DockManager(Window window)
     {
         _window = window;
+        _viewport = window as IDockViewport;
         _pollTimer = new DispatcherTimer(DispatcherPriority.Input) { Interval = TimeSpan.FromMilliseconds(25) };
         _pollTimer.Tick += Poll;
 
@@ -103,7 +106,8 @@ public sealed class DockManager
 
     private void Layout()
     {
-        Rect wa = GetWorkArea();
+        _workArea = GetWorkArea();
+        Rect wa = _workArea;
 
         switch (_edge)
         {
@@ -112,8 +116,8 @@ public sealed class DockManager
                 double ch = wa.Height * CollapseRatio;
                 double cy = wa.Top + (wa.Height - ch) / 2;
                 _expandedRect = new Rect(wa.Left, wa.Top, PanelThickness, wa.Height);
-                _collapsedRect = new Rect(wa.Left - PanelThickness + TriggerStrip, cy, PanelThickness, ch);
                 _triggerRect = new Rect(wa.Left, cy, TriggerStrip, ch);
+                _collapsedRect = _triggerRect;
                 break;
             }
             case DockEdge.Right:
@@ -121,8 +125,8 @@ public sealed class DockManager
                 double ch = wa.Height * CollapseRatio;
                 double cy = wa.Top + (wa.Height - ch) / 2;
                 _expandedRect = new Rect(wa.Right - PanelThickness, wa.Top, PanelThickness, wa.Height);
-                _collapsedRect = new Rect(wa.Right - TriggerStrip, cy, PanelThickness, ch);
                 _triggerRect = new Rect(wa.Right - TriggerStrip, cy, TriggerStrip, ch);
+                _collapsedRect = _triggerRect;
                 break;
             }
             case DockEdge.Top:
@@ -130,8 +134,8 @@ public sealed class DockManager
                 double cw = wa.Width * CollapseRatio;
                 double cx = wa.Left + (wa.Width - cw) / 2;
                 _expandedRect = new Rect(wa.Left, wa.Top, wa.Width, PanelThickness);
-                _collapsedRect = new Rect(cx, wa.Top - PanelThickness + TriggerStrip, cw, PanelThickness);
                 _triggerRect = new Rect(cx, wa.Top, cw, TriggerStrip);
+                _collapsedRect = _triggerRect;
                 break;
             }
             case DockEdge.Bottom:
@@ -139,8 +143,8 @@ public sealed class DockManager
                 double cw = wa.Width * CollapseRatio;
                 double cx = wa.Left + (wa.Width - cw) / 2;
                 _expandedRect = new Rect(wa.Left, wa.Bottom - PanelThickness, wa.Width, PanelThickness);
-                _collapsedRect = new Rect(cx, wa.Bottom - TriggerStrip, cw, PanelThickness);
                 _triggerRect = new Rect(cx, wa.Bottom - TriggerStrip, cw, TriggerStrip);
+                _collapsedRect = _triggerRect;
                 break;
             }
         }
@@ -231,10 +235,49 @@ public sealed class DockManager
 
     private void SetBounds(Rect r)
     {
-        _window.Left = r.X;
-        _window.Top = r.Y;
-        _window.Width = Math.Max(1, r.Width);
-        _window.Height = Math.Max(1, r.Height);
+        Rect bounds = ClampToWorkArea(r);
+        _viewport?.SetDockViewport(_expandedRect, bounds);
+        SetHorizontalBounds(bounds.X, bounds.Width);
+        SetVerticalBounds(bounds.Y, bounds.Height);
+    }
+
+    private Rect ClampToWorkArea(Rect r)
+    {
+        if (_workArea.IsEmpty)
+            return r;
+
+        double width = Math.Min(Math.Max(1, r.Width), Math.Max(1, _workArea.Width));
+        double height = Math.Min(Math.Max(1, r.Height), Math.Max(1, _workArea.Height));
+        double left = Math.Clamp(r.X, _workArea.Left, _workArea.Right - width);
+        double top = Math.Clamp(r.Y, _workArea.Top, _workArea.Bottom - height);
+
+        return new Rect(left, top, width, height);
+    }
+
+    private void SetHorizontalBounds(double left, double width)
+    {
+        if (left > _window.Left && width < _window.Width)
+        {
+            _window.Width = width;
+            _window.Left = left;
+            return;
+        }
+
+        _window.Left = left;
+        _window.Width = width;
+    }
+
+    private void SetVerticalBounds(double top, double height)
+    {
+        if (top > _window.Top && height < _window.Height)
+        {
+            _window.Height = height;
+            _window.Top = top;
+            return;
+        }
+
+        _window.Top = top;
+        _window.Height = height;
     }
 
     private static double Lerp(double a, double b, double k) => a + (b - a) * k;

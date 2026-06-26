@@ -18,6 +18,7 @@ public partial class CommandEditWindow : Window
         {
             Title = source?.Title ?? string.Empty,
             Description = source?.Description ?? string.Empty,
+            SilentExecution = source?.SilentExecution ?? false,
             Glyph = source?.Glyph ?? Services.IconCatalog.Glyphs[0],
             AccentHex = source?.AccentHex ?? Services.IconCatalog.Accents[0],
             CommandText = source?.CommandText ?? string.Empty,

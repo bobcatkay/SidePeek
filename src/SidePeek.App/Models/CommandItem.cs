@@ -14,6 +14,13 @@ public partial class CommandItem : ObservableObject
     private string _description = string.Empty;
 
     [ObservableProperty]
+    private bool _silentExecution;
+
+    [property: JsonIgnore]
+    [ObservableProperty]
+    private bool _isRunning;
+
+    [ObservableProperty]
     private string _glyph = "\uE756";
 
     [ObservableProperty]
