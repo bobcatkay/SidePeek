@@ -17,9 +17,13 @@ public sealed class HotkeySettings
 
 public sealed class AppSettings
 {
+    public const int DefaultExpandDelayMs = 1000;
+    public const int DefaultCollapseDelayMs = 450;
+
     public DockEdge DockEdge { get; set; } = DockEdge.Right;
     public string DockDisplayDeviceName { get; set; } = string.Empty;
-    public int CollapseDelayMs { get; set; } = 450;
+    public int ExpandDelayMs { get; set; } = DefaultExpandDelayMs;
+    public int CollapseDelayMs { get; set; } = DefaultCollapseDelayMs;
     public int NoteHistoryMonths { get; set; } = 12;
     public AppThemeMode Theme { get; set; } = AppThemeMode.Light;
     public bool StartWithWindows { get; set; }

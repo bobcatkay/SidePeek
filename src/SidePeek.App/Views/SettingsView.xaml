@@ -48,6 +48,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="88" />
@@ -70,13 +71,31 @@
                                   SelectedItem="{Binding SelectedDockEdge, Mode=TwoWay}"
                                   DisplayMemberPath="Label" />
 
-                        <TextBlock Grid.Row="3" Style="{StaticResource SettingLabel}" Text="收起延时" Margin="0,12,0,0" />
+                        <TextBlock Grid.Row="3" Style="{StaticResource SettingLabel}" Text="展开延时" Margin="0,12,0,0" />
                         <Grid Grid.Row="3" Grid.Column="1" Margin="0,12,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="70" />
                             </Grid.ColumnDefinitions>
-                            <Slider Minimum="150" Maximum="2000" TickFrequency="50"
+                            <Slider Minimum="{x:Static vm:SettingsViewModel.ExpandDelayMinimumMs}"
+                                    Maximum="{x:Static vm:SettingsViewModel.ExpandDelayMaximumMs}"
+                                    TickFrequency="{x:Static vm:SettingsViewModel.ExpandDelayTickMs}"
+                                    IsSnapToTickEnabled="True"
+                                    Value="{Binding ExpandDelayMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Grid.Column="1" Text="{Binding ExpandDelayMs, StringFormat={}{0:0} ms}"
+                                       HorizontalAlignment="Right" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                        </Grid>
+
+                        <TextBlock Grid.Row="4" Style="{StaticResource SettingLabel}" Text="收起延时" Margin="0,12,0,0" />
+                        <Grid Grid.Row="4" Grid.Column="1" Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="70" />
+                            </Grid.ColumnDefinitions>
+                            <Slider Minimum="{x:Static vm:SettingsViewModel.CollapseDelayMinimumMs}"
+                                    Maximum="{x:Static vm:SettingsViewModel.CollapseDelayMaximumMs}"
+                                    TickFrequency="{x:Static vm:SettingsViewModel.CollapseDelayTickMs}"
                                     IsSnapToTickEnabled="True"
                                     Value="{Binding CollapseDelayMs, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                             <TextBlock Grid.Column="1" Text="{Binding CollapseDelayMs, StringFormat={}{0:0} ms}"

@@ -9,8 +9,12 @@ namespace SidePeek.App.Services;
 public static class SettingsService
 {
     private const string FileName = "settings.json";
+    public const int MinExpandDelayMs = 100;
+    public const int MaxExpandDelayMs = 3000;
+    public const int ExpandDelayStepMs = 100;
     public const int MinCollapseDelayMs = 150;
     public const int MaxCollapseDelayMs = 2000;
+    public const int CollapseDelayStepMs = 50;
     public const int MinNoteHistoryMonths = 1;
     public const int MaxNoteHistoryMonths = 60;
 
@@ -79,6 +83,11 @@ public static class SettingsService
         settings.DockDisplayDeviceName = (settings.DockDisplayDeviceName ?? string.Empty).Trim();
         if (!IsKnownDisplay(settings.DockDisplayDeviceName))
             settings.DockDisplayDeviceName = GetDefaultDisplayDeviceName();
+
+        settings.ExpandDelayMs = Math.Clamp(
+            settings.ExpandDelayMs,
+            MinExpandDelayMs,
+            MaxExpandDelayMs);
 
         settings.CollapseDelayMs = Math.Clamp(
             settings.CollapseDelayMs,

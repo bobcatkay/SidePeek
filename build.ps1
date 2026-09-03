@@ -12,14 +12,21 @@
 .PARAMETER Configuration
     Build configuration. Default: Release.
 
+.PARAMETER NuGetProxy
+    HTTP proxy used only for the dotnet publish process. Pass an empty string to use a direct connection.
+    Default: http://127.0.0.1:10808.
+
 .EXAMPLE
     .\build.ps1
     .\build.ps1 -SelfContained
+    .\build.ps1 -NuGetProxy ""
 #>
 param(
     [switch]$SelfContained,
     [string]$Runtime = "win-x64",
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [AllowEmptyString()]
+    [string]$NuGetProxy = "http://127.0.0.1:10808"
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,8 +59,49 @@ if ($SelfContained) {
     $publishArgs += "-p:EnableCompressionInSingleFile=true"
 }
 
-dotnet @publishArgs
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit $LASTEXITCODE)" }
+$previousProxyEnvironment = @{
+    HTTP_PROXY = $env:HTTP_PROXY
+    HTTPS_PROXY = $env:HTTPS_PROXY
+    ALL_PROXY = $env:ALL_PROXY
+    NO_PROXY = $env:NO_PROXY
+}
+
+[Uri]$nugetProxyUri = $null
+if (-not [string]::IsNullOrWhiteSpace($NuGetProxy)) {
+    $isValidProxy = [Uri]::TryCreate($NuGetProxy, [UriKind]::Absolute, [ref]$nugetProxyUri)
+    if (-not $isValidProxy -or $nugetProxyUri.Scheme -notin "http", "https") {
+        throw "NuGetProxy must be an absolute HTTP(S) URL or an empty string: $NuGetProxy"
+    }
+}
+
+$publishExitCode = $null
+try {
+    if ($null -ne $nugetProxyUri) {
+        # Override stale terminal proxy variables only for this publish, then restore them below.
+        $env:HTTP_PROXY = $nugetProxyUri.AbsoluteUri
+        $env:HTTPS_PROXY = $nugetProxyUri.AbsoluteUri
+        Remove-Item Env:ALL_PROXY -ErrorAction SilentlyContinue
+        Remove-Item Env:NO_PROXY -ErrorAction SilentlyContinue
+
+        $proxyDisplay = "$($nugetProxyUri.Scheme)://$($nugetProxyUri.Host):$($nugetProxyUri.Port)"
+        Write-Host "==> NuGet proxy (process-local): $proxyDisplay" -ForegroundColor Cyan
+    }
+
+    dotnet @publishArgs
+    $publishExitCode = $LASTEXITCODE
+}
+finally {
+    foreach ($proxyVariableName in $previousProxyEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable(
+            $proxyVariableName,
+            $previousProxyEnvironment[$proxyVariableName],
+            [EnvironmentVariableTarget]::Process)
+    }
+}
+
+if ($null -eq $publishExitCode -or $publishExitCode -ne 0) {
+    throw "dotnet publish failed (exit $publishExitCode)"
+}
 
 $exe = Join-Path $publishDir "SidePeek.exe"
 if (-not (Test-Path $exe)) { throw "Executable not found: $exe" }

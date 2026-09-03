@@ -7,10 +7,9 @@
   "targets": {
     ".NETCoreApp,Version=v9.0": {},
     ".NETCoreApp,Version=v9.0/win-x64": {
-      "SidePeek/0.3.5": {
+      "SidePeek/0.3.11": {
         "dependencies": {
           "CommunityToolkit.Mvvm": "8.4.2",
-          "Microsoft.NET.ILLink.Tasks": "9.0.11",
           "WPF-UI": "4.3.0"
         },
         "runtime": {
@@ -25,7 +24,6 @@
           }
         }
       },
-      "Microsoft.NET.ILLink.Tasks/9.0.11": {},
       "WPF-UI/4.3.0": {
         "dependencies": {
           "WPF-UI.Abstractions": "4.3.0"
@@ -48,7 +46,7 @@
     }
   },
   "libraries": {
-    "SidePeek/0.3.5": {
+    "SidePeek/0.3.11": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
@@ -59,13 +57,6 @@
       "sha512": "sha512-WadCzGEc2U+3e20avRLng4qNtt4zoOGWrdUISqJWrHe3/FSnrYjuM5Sb4yQb09LhkBXrrI4Zt3dLKgRMbItsrg==",
       "path": "communitytoolkit.mvvm/8.4.2",
       "hashPath": "communitytoolkit.mvvm.8.4.2.nupkg.sha512"
-    },
-    "Microsoft.NET.ILLink.Tasks/9.0.11": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-vvB9rtDmWaXgYkViT00KORBVmA3pcYsHlgd9vOPqL9sf5bKy3rvLMF1+sI1uUfVj28S3itirHlHmX5/kcpZKNw==",
-      "path": "microsoft.net.illink.tasks/9.0.11",
-      "hashPath": "microsoft.net.illink.tasks.9.0.11.nupkg.sha512"
     },
     "WPF-UI/4.3.0": {
       "type": "package",

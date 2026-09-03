@@ -68,14 +68,15 @@ dotnet test                          # 运行单元测试
 ## 8. 运行时快捷键与托盘
 
 - 全局热键 **Ctrl + Alt + S**：展开 / 收起面板。
-- 鼠标移到屏幕停靠边中部的小触发块：悬停展开；移开自动收起。
+- 鼠标在屏幕停靠边中部的小触发块连续停留达到“展开延时”（默认 1 秒）后展开；移开自动收起。
 - 系统托盘图标：双击切换显示；右键菜单含「设置」「开机自启」开关与「退出」。
 - 数据保存在 `%AppData%\SidePeek\`（`notes.json` / `completed-notes.json` / `commands.json` / `tools.json` / `clipboard.json` / `settings.json`）。
 
 ## 7. 网络代理（本机环境）
 
-访问 NuGet/GitHub 若需要代理：
+构建脚本默认仅在 `dotnet publish` 期间使用本机 HTTP 代理 `127.0.0.1:10808`，不会修改系统或当前终端的环境变量。需要改用其他代理或直连时：
 
 ```powershell
-$env:HTTP_PROXY='http://127.0.0.1:10809'; $env:HTTPS_PROXY='http://127.0.0.1:10809'
+.\build.ps1 -NuGetProxy 'http://127.0.0.1:其他端口'
+.\build.ps1 -NuGetProxy ''
 ```

@@ -14,6 +14,9 @@
 .PARAMETER Configuration
     Build configuration. Default: Release.
 
+.PARAMETER NuGetProxy
+    Optional NuGet HTTP proxy override passed through to build.ps1.
+
 .EXAMPLE
     .\build-release.ps1
     .\build-release.ps1 -Part Minor -SelfContained
@@ -23,7 +26,9 @@ param(
     [string]$Part = "Patch",
     [switch]$SelfContained,
     [string]$Runtime = "win-x64",
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [AllowEmptyString()]
+    [string]$NuGetProxy
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,6 +84,9 @@ $buildArgs = @{
 }
 if ($SelfContained) {
     $buildArgs.SelfContained = $true
+}
+if ($PSBoundParameters.ContainsKey("NuGetProxy")) {
+    $buildArgs.NuGetProxy = $NuGetProxy
 }
 
 try {

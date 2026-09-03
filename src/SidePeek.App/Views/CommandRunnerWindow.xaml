@@ -38,6 +38,9 @@
         </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <ui:Button x:Name="InterruptButton" Content="中断" IsEnabled="False"
+                       MinWidth="84" Margin="0,0,8,0"
+                       Click="OnInterrupt" />
             <ui:Button x:Name="CloseButton" Content="关闭" Appearance="Primary" MinWidth="84" Click="OnClose" />
         </StackPanel>
     </Grid>

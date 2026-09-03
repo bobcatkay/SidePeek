@@ -27,6 +27,7 @@ public sealed class SettingsViewModel : ObservableObject
     private SettingsOption<string> _selectedDockDisplay = null!;
     private SettingsOption<DockEdge> _selectedDockEdge = null!;
     private SettingsOption<AppThemeMode> _selectedTheme = null!;
+    private double _expandDelayMs;
     private double _collapseDelayMs;
     private double _noteHistoryMonths;
     private bool _startWithWindows;
@@ -67,6 +68,12 @@ public sealed class SettingsViewModel : ObservableObject
     public IReadOnlyList<SettingsOption<AppThemeMode>> Themes { get; }
     public IReadOnlyList<string> HotkeyKeys { get; }
     public string VersionText { get; } = $"v{GetDisplayVersion()}";
+    public static double ExpandDelayMinimumMs => SettingsService.MinExpandDelayMs;
+    public static double ExpandDelayMaximumMs => SettingsService.MaxExpandDelayMs;
+    public static double ExpandDelayTickMs => SettingsService.ExpandDelayStepMs;
+    public static double CollapseDelayMinimumMs => SettingsService.MinCollapseDelayMs;
+    public static double CollapseDelayMaximumMs => SettingsService.MaxCollapseDelayMs;
+    public static double CollapseDelayTickMs => SettingsService.CollapseDelayStepMs;
 
     public SettingsOption<string> SelectedDockDisplay
     {
@@ -101,12 +108,26 @@ public sealed class SettingsViewModel : ObservableObject
         }
     }
 
+    public double ExpandDelayMs
+    {
+        get => _expandDelayMs;
+        set
+        {
+            double normalized = Math.Round(value / SettingsService.ExpandDelayStepMs)
+                * SettingsService.ExpandDelayStepMs;
+            if (!SetProperty(ref _expandDelayMs, normalized) || _loading)
+                return;
+            SettingsService.Update(settings => settings.ExpandDelayMs = (int)normalized);
+        }
+    }
+
     public double CollapseDelayMs
     {
         get => _collapseDelayMs;
         set
         {
-            double normalized = Math.Round(value / 50d) * 50d;
+            double normalized = Math.Round(value / SettingsService.CollapseDelayStepMs)
+                * SettingsService.CollapseDelayStepMs;
             if (!SetProperty(ref _collapseDelayMs, normalized) || _loading)
                 return;
             SettingsService.Update(settings => settings.CollapseDelayMs = (int)normalized);
@@ -199,6 +220,7 @@ public sealed class SettingsViewModel : ObservableObject
                 ?? DockDisplays[0];
             SelectedDockEdge = DockEdges.First(option => option.Value == settings.DockEdge);
             SelectedTheme = Themes.First(option => option.Value == settings.Theme);
+            ExpandDelayMs = settings.ExpandDelayMs;
             CollapseDelayMs = settings.CollapseDelayMs;
             NoteHistoryMonths = settings.NoteHistoryMonths;
             StartWithWindows = settings.StartWithWindows;

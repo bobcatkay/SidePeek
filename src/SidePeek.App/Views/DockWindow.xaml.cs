@@ -80,6 +80,7 @@ public partial class DockWindow : Window, IDockViewport
         AppSettings settings = SettingsService.Current;
         _dock = new DockManager(this)
         {
+            ExpandDelayMs = settings.ExpandDelayMs,
             CollapseDelayMs = settings.CollapseDelayMs,
             IsPinned = PinToggle.IsChecked == true
         };
@@ -320,6 +321,7 @@ public partial class DockWindow : Window, IDockViewport
         if (_dock is null)
             return;
 
+        _dock.ExpandDelayMs = settings.ExpandDelayMs;
         _dock.CollapseDelayMs = settings.CollapseDelayMs;
         if (_dock.Edge != settings.DockEdge ||
             !string.Equals(_dock.DisplayDeviceName, settings.DockDisplayDeviceName, StringComparison.OrdinalIgnoreCase))

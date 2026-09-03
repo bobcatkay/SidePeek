@@ -1,11 +1,14 @@
 using System;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using SidePeek.App.Interop;
 using SidePeek.App.Models;
+using SidePeek.App.Services;
 using Forms = System.Windows.Forms;
 
 namespace SidePeek.App.Docking;
@@ -31,8 +34,10 @@ public sealed class DockManager
     private DockEdge _edge = DockEdge.Right;
     private string _displayDeviceName = string.Empty;
     private DockState _state = DockState.Hidden;
+    private DateTime? _insideTriggerSince;
     private DateTime? _outsideSince;
     private bool _suspended;
+    private bool _topmostPromotionFailureLogged;
 
     private Rect _expandedRect;
     private Rect _collapsedRect;
@@ -56,7 +61,8 @@ public sealed class DockManager
     public DockEdge Edge => _edge;
     public string DisplayDeviceName => _displayDeviceName;
     public DockState State => _state;
-    public int CollapseDelayMs { get; set; } = 450;
+    public int ExpandDelayMs { get; set; } = AppSettings.DefaultExpandDelayMs;
+    public int CollapseDelayMs { get; set; } = AppSettings.DefaultCollapseDelayMs;
     public bool IsPinned { get; set; }
     public event EventHandler<DockEdge>? EdgeChanged;
 
@@ -67,7 +73,11 @@ public sealed class DockManager
     }
 
     /// <summary>对话框打开期间暂停轮询，避免面板在用户离开时收起。</summary>
-    public void Suspend() => _suspended = true;
+    public void Suspend()
+    {
+        _suspended = true;
+        _insideTriggerSince = null;
+    }
 
     public void Resume() => _suspended = false;
 
@@ -80,9 +90,12 @@ public sealed class DockManager
         _edge = edge;
         _displayDeviceName = displayDeviceName ?? string.Empty;
         Layout();
+        _insideTriggerSince = null;
         _outsideSince = null;
         _state = expanded ? DockState.Expanded : DockState.Hidden;
         ApplyRect(expanded ? _expandedRect : _collapsedRect, animate: false);
+        if (expanded)
+            PromoteToTopmost();
         if (edgeChanged)
             EdgeChanged?.Invoke(this, edge);
     }
@@ -152,15 +165,35 @@ public sealed class DockManager
 
     private void Poll(object? sender, EventArgs e)
     {
-        if (_suspended || !NativeMethods.GetCursorPos(out var p))
+        if (_suspended)
             return;
+
+        if (!NativeMethods.GetCursorPos(out var p))
+        {
+            _insideTriggerSince = null;
+            return;
+        }
 
         Point cursor = ToDip(p);
 
         if (_state == DockState.Hidden)
         {
             if (_triggerRect.Contains(cursor))
-                Expand();
+            {
+                DateTime now = DateTime.UtcNow;
+                _insideTriggerSince ??= now;
+
+                // 必须连续停留满设定时长；快速划过或中途离开都会重新计时。
+                if (now - _insideTriggerSince >= TimeSpan.FromMilliseconds(ExpandDelayMs))
+                {
+                    AppLogger.Info($"Dock expansion triggered after {ExpandDelayMs} ms hover delay.");
+                    Expand();
+                }
+            }
+            else
+            {
+                _insideTriggerSince = null;
+            }
         }
         else if (IsPinned)
         {
@@ -183,11 +216,35 @@ public sealed class DockManager
 
     private void Expand()
     {
+        PromoteToTopmost();
         if (_state == DockState.Expanded)
             return;
         _state = DockState.Expanded;
+        _insideTriggerSince = null;
         _outsideSince = null;
         ApplyRect(_expandedRect, animate: true);
+    }
+
+    private void PromoteToTopmost()
+    {
+        IntPtr hwnd = new WindowInteropHelper(_window).Handle;
+        if (hwnd == IntPtr.Zero)
+            return;
+
+        const uint flags = NativeMethods.SWP_NOMOVE
+            | NativeMethods.SWP_NOSIZE
+            | NativeMethods.SWP_NOACTIVATE;
+
+        // Topmost windows still have their own Z-order. Reassert only when revealing so the
+        // sidebar moves ahead of later topmost windows without stealing focus or fighting them per frame.
+        if (NativeMethods.SetWindowPos(hwnd, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0, flags) ||
+            _topmostPromotionFailureLogged)
+        {
+            return;
+        }
+
+        _topmostPromotionFailureLogged = true;
+        AppLogger.Error($"Unable to promote dock window to topmost. Win32 error: {Marshal.GetLastWin32Error()}.");
     }
 
     private void Collapse()
@@ -195,6 +252,7 @@ public sealed class DockManager
         if (_state == DockState.Hidden)
             return;
         _state = DockState.Hidden;
+        _insideTriggerSince = null;
         _outsideSince = null;
         ApplyRect(_collapsedRect, animate: true);
     }

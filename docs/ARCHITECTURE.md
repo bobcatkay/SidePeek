@@ -21,7 +21,7 @@
 - **开机自启**：写 HKCU `...\Run`（`StartupService`），托盘菜单开关。
 - **全局热键**：`Ctrl + Alt + S` 切换展开/收起（`RegisterHotKey` + `WndProc` 钩子）。
 - **单实例**：`Mutex` 防止重复启动；`ShutdownMode=OnExplicitShutdown`（关窗不退，仅托盘退出）。
-- **设置页与设置持久化**：右上角设置入口 + 托盘设置入口；显示当前应用版本；左右停靠边、收起延时、主题、开机自启、全局热键、便签历史时长写入 `settings.json`，并即时生效。
+- **设置页与设置持久化**：右上角设置入口 + 托盘设置入口；显示当前应用版本；左右停靠边、展开/收起延时、主题、开机自启、全局热键、便签历史时长写入 `settings.json`，并即时生效。
 - **基础日志**：`AppLogger` 将启动与未处理异常写入 `%AppData%\SidePeek\logs\sidepeek-*.log`。
 - **打包**：根目录 `build.ps1` 一键 `dotnet publish` 单文件 + zip 到 `dist/`，不修改版本；`build-release.ps1` 先自增 `<Version>` 再调用 `build.ps1`。
 

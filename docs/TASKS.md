@@ -23,7 +23,7 @@
 - ✅ 全局热键 Ctrl+Alt+S 切换展开/收起
 - ✅ 单实例 Mutex + 关窗不退（仅托盘退出）
 - ✅ 编译打包脚本：`build.ps1` 普通打包不改版本，`build-release.ps1` 自增版本后打包
-- ✅ 设置页：显示版本号；左右停靠、收起延时、主题、开机自启、全局热键、便签历史时长 + `settings.json`
+- ✅ 设置页：显示版本号；左右停靠、展开/收起延时、主题、开机自启、全局热键、便签历史时长 + `settings.json`
 - ✅ 基础日志落盘：`%AppData%\SidePeek\logs\sidepeek-*.log`
 - ⏳ Serilog 替换 / 多项目拆分 / 单元测试 / 多显示器
 
