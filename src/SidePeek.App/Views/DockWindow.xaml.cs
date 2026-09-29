@@ -152,11 +152,19 @@ public partial class DockWindow : Window, IDockViewport
             _dock?.Toggle();
             handled = true;
         }
+        else if (msg == NativeMethods.WM_DPICHANGED ||
+                 msg == NativeMethods.WM_DISPLAYCHANGE ||
+                 msg == NativeMethods.WM_SETTINGCHANGE)
+        {
+            // Let WPF process the DPI message, then restore the configured screen edge.
+            _dock?.QueuePlacementRefresh();
+        }
         return IntPtr.Zero;
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        _dock?.Stop();
         SettingsService.Changed -= OnSettingsChanged;
         UnregisterHotkey();
         if (_hwnd != IntPtr.Zero)

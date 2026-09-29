@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -9,7 +8,6 @@ using System.Windows.Threading;
 using SidePeek.App.Interop;
 using SidePeek.App.Models;
 using SidePeek.App.Services;
-using Forms = System.Windows.Forms;
 
 namespace SidePeek.App.Docking;
 
@@ -24,12 +22,16 @@ public sealed class DockManager
     private const double TriggerStrip = 6;        // 收起时露出的厚度（像素）
     private const double CollapseRatio = 0.10;    // 收起时沿边长度占比
     private const double AnimationMs = 220;
+    private static readonly TimeSpan DisplayRefreshInterval = TimeSpan.FromSeconds(2);
 
     private readonly Window _window;
     private readonly IDockViewport? _viewport;
     private readonly DispatcherTimer _pollTimer;
     private readonly DispatcherTimer _animTimer;
     private readonly Stopwatch _animClock = new();
+    private readonly Stopwatch _displayRefreshClock = Stopwatch.StartNew();
+    private DispatcherOperation? _placementRefresh;
+    private Matrix _layoutTransform = Matrix.Identity;
 
     private DockEdge _edge = DockEdge.Right;
     private string _displayDeviceName = string.Empty;
@@ -38,6 +40,7 @@ public sealed class DockManager
     private DateTime? _outsideSince;
     private bool _suspended;
     private bool _topmostPromotionFailureLogged;
+    private bool _displayReadFailureLogged;
 
     private Rect _expandedRect;
     private Rect _collapsedRect;
@@ -72,6 +75,44 @@ public sealed class DockManager
         _pollTimer.Start();
     }
 
+    public void Stop()
+    {
+        _pollTimer.Stop();
+        _animTimer.Stop();
+        _placementRefresh?.Abort();
+        _placementRefresh = null;
+    }
+
+    public void QueuePlacementRefresh()
+    {
+        if (!_pollTimer.IsEnabled || _placementRefresh is not null)
+            return;
+
+        // WPF must finish handling WM_DPICHANGED before we read its new DIP transform.
+        // Stop the old animation now so it cannot reapply pre-change coordinates.
+        _animTimer.Stop();
+        _placementRefresh = _window.Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+        {
+            _placementRefresh = null;
+            RefreshPlacement(force: true);
+        }));
+    }
+
+    private void RefreshPlacement(bool force = false)
+    {
+        _displayRefreshClock.Restart();
+        Rect workArea = GetWorkArea();
+        Matrix transform = DpiTransform;
+        if (!force && workArea == _workArea && transform == _layoutTransform)
+            return;
+
+        Layout(workArea);
+        _insideTriggerSince = null;
+        _outsideSince = null;
+        ApplyRect(_state == DockState.Expanded ? _expandedRect : _collapsedRect, animate: false);
+        AppLogger.Info($"[DockManager] Display geometry refreshed: edge={_edge}, state={_state}, workArea={_workArea}, deviceToDip={_layoutTransform}.");
+    }
+
     /// <summary>对话框打开期间暂停轮询，避免面板在用户离开时收起。</summary>
     public void Suspend()
     {
@@ -89,7 +130,7 @@ public sealed class DockManager
         bool edgeChanged = _edge != edge;
         _edge = edge;
         _displayDeviceName = displayDeviceName ?? string.Empty;
-        Layout();
+        Layout(GetWorkArea());
         _insideTriggerSince = null;
         _outsideSince = null;
         _state = expanded ? DockState.Expanded : DockState.Hidden;
@@ -117,9 +158,10 @@ public sealed class DockManager
 
     public void Reveal() => Expand();
 
-    private void Layout()
+    private void Layout(Rect workArea)
     {
-        _workArea = GetWorkArea();
+        _workArea = workArea;
+        _layoutTransform = DpiTransform;
         Rect wa = _workArea;
 
         switch (_edge)
@@ -165,6 +207,13 @@ public sealed class DockManager
 
     private void Poll(object? sender, EventArgs e)
     {
+        // RDP reconnects can deliver display notifications before the topology settles.
+        // Recheck infrequently, including while dialogs suspend hover handling.
+        if (_placementRefresh is not null)
+            return;
+        if (_displayRefreshClock.Elapsed >= DisplayRefreshInterval)
+            RefreshPlacement();
+
         if (_suspended)
             return;
 
@@ -342,33 +391,59 @@ public sealed class DockManager
 
     private Rect GetWorkArea()
     {
-        Forms.Screen? screen = Forms.Screen.AllScreens.FirstOrDefault(item =>
-            string.Equals(item.DeviceName, _displayDeviceName, StringComparison.OrdinalIgnoreCase));
+        Rect? selected = null;
+        Rect? primary = null;
+        Rect? first = null;
+        // Enumerate native monitors afresh; cached Screen objects can retain the old
+        // work area during remote-session resolution and taskbar changes.
+        NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
+            (IntPtr monitor, IntPtr hdc, ref NativeMethods.RECT bounds, IntPtr data) =>
+            {
+                var info = new NativeMethods.MONITORINFOEX
+                {
+                    Size = Marshal.SizeOf<NativeMethods.MONITORINFOEX>()
+                };
+                if (!NativeMethods.GetMonitorInfo(monitor, ref info))
+                    return true;
 
-        screen ??= Forms.Screen.PrimaryScreen ?? Forms.Screen.AllScreens.FirstOrDefault();
-        if (screen is null)
-            return SystemParameters.WorkArea;
+                NativeMethods.RECT area = info.Work;
+                if (area.Right <= area.Left || area.Bottom <= area.Top)
+                    return true;
 
-        return ToDip(screen.WorkingArea);
-    }
+                Rect workArea = ToDip(area);
+                first ??= workArea;
+                if ((info.Flags & NativeMethods.MONITORINFOF_PRIMARY) != 0)
+                    primary = workArea;
+                if (string.Equals(info.DeviceName, _displayDeviceName, StringComparison.OrdinalIgnoreCase))
+                    selected = workArea;
+                return true;
+            }, IntPtr.Zero);
 
-    private Point ToDip(NativeMethods.POINT p)
-    {
-        var source = PresentationSource.FromVisual(_window);
-        double sx = 1, sy = 1;
-        if (source?.CompositionTarget != null)
+        Rect? available = selected ?? primary ?? first;
+        if (available is Rect availableArea)
         {
-            Matrix m = source.CompositionTarget.TransformFromDevice;
-            sx = m.M11;
-            sy = m.M22;
+            _displayReadFailureLogged = false;
+            return availableArea;
         }
-        return new Point(p.X * sx, p.Y * sy);
+
+        if (!_displayReadFailureLogged)
+        {
+            AppLogger.Error("[DockManager] No usable monitor work area; retaining the previous placement until display information becomes available.");
+            _displayReadFailureLogged = true;
+        }
+
+        // Keep the last usable geometry through a transient display disconnect.
+        return _workArea.IsEmpty || _workArea.Width <= 0 ? SystemParameters.WorkArea : _workArea;
     }
 
-    private Rect ToDip(System.Drawing.Rectangle r)
+    private Matrix DpiTransform => PresentationSource.FromVisual(_window)
+        ?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
+
+    private Point ToDip(NativeMethods.POINT p) => DpiTransform.Transform(new Point(p.X, p.Y));
+
+    private Rect ToDip(NativeMethods.RECT r)
     {
-        var source = PresentationSource.FromVisual(_window);
-        Matrix transform = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
+        Matrix transform = DpiTransform;
         Point topLeft = transform.Transform(new Point(r.Left, r.Top));
         Point bottomRight = transform.Transform(new Point(r.Right, r.Bottom));
         return new Rect(topLeft, bottomRight);

@@ -1,0 +1,7 @@
+/target/
+/.tools/
+/dist/
+**/bin/
+**/obj/
+*.log
+

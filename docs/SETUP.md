@@ -1,82 +1,65 @@
-# SidePeek 开发环境与工具
+# SidePeek GPUI 开发环境
 
-> 目标平台：Windows 11；技术栈：.NET 9 + WPF + WPF-UI。
+目标平台为 Windows 11 x64。当前实现使用 Rust 2024 + GPUI Kit 0.6.0；WPF 仅作为历史源码保留。
 
-## 1. 必装工具
+## 工具
 
-| 工具 | 版本 | 用途 | 安装命令 |
-|---|---|---|---|
-| .NET SDK | 9.x | WPF 编译/运行核心 | `winget install Microsoft.DotNet.SDK.9` |
-| Git | 最新 | 版本管理 | `winget install Git.Git` |
+- Rust MSVC 工具链，版本由根目录 rust-toolchain.toml 固定。通过 [Rust 官方安装程序](https://rustup.rs/) 安装。
+- Visual Studio 2022/2026 或 Build Tools，勾选“使用 C++ 的桌面开发”、MSVC x64 和 Windows 10/11 SDK。
+- PowerShell 7（打包脚本使用 ProcessStartInfo.ArgumentList）。
+- 支持 DirectX 的显卡驱动。
 
-> 装完后**重启终端**（或重启 Cursor），让 PATH 生效。
+不再需要 .NET SDK、WPF-UI 或 Node.js。Rust 编译器会自动发现 MSVC 和 Windows SDK。
 
-## 2. 不需要安装的工具
+## 常用命令
 
-- **Visual Studio**：非必须。Cursor + C# 扩展即可开发 WPF。VS 唯一的优势是 XAML 可视化设计器，但本项目界面基本手写 XAML（WPF-UI Fluent），不依赖设计器。
-- **cmake / MSVC / C++ 工具链**：完全不需要。cmake 是 C/C++ 的构建系统，.NET 用 `dotnet` CLI + MSBuild，二者无关。
-- **Node.js / npm**：不需要（非 Web 方案）。
+在已配置 Rust PATH 的终端执行：
 
-## 3. 推荐的 Cursor / VS Code 扩展
+~~~powershell
+cargo run --locked
+cargo test --locked
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+.\build.ps1
+.\build.ps1 -Configuration Debug -Offline
+.\build-release.ps1 -Part Minor
+~~~
 
-- **C# Dev Kit**（`ms-dotnettools.csdevkit`）——C# 语言支持、调试、解决方案管理。
-- **C#**（`ms-dotnettools.csharp`，会随 Dev Kit 一起装）。
-- 可选：**XAML Styler**、**.NET Install Tool**。
+本次迁移的本机工具链放在 .tools/cargo 和 .tools/rustup，未修改系统 PATH。构建脚本会自动识别；手动运行 Cargo 前可在当前 PowerShell 进程中设置：
 
-## 4. 验证环境
+~~~powershell
+$env:CARGO_HOME = Join-Path $PWD '.tools\cargo'
+$env:RUSTUP_HOME = Join-Path $PWD '.tools\rustup'
+$env:PATH = "$env:CARGO_HOME\bin;$env:PATH"
+~~~
 
-安装并重启终端后执行：
+## 网络与打包
 
-```powershell
-dotnet --version          # 应输出 9.x.x
-dotnet --list-sdks        # 应能看到 9.x 的 SDK
-git --version             # 应输出 git version ...
-```
+build.ps1 的默认代理为 http://127.0.0.1:10808，仅传给 Cargo 子进程；脚本退出后不会改变终端或系统代理。传入 -Proxy '' 可直连，-Offline 使用本机缓存。旧参数 -NuGetProxy 是 -Proxy 的兼容别名；-SelfContained 可继续传入，GPUI 本身不依赖 .NET。
 
-## 5. NuGet 依赖（无需手动安装，dotnet restore 自动还原）
+普通构建不会修改版本。build-release.ps1 递增 Cargo.toml 的版本，同步 Cargo.lock，再生成 ZIP；失败时同时回滚两份文件。
 
-| 包 | 用途 |
-|---|---|
-| `WPF-UI` | Fluent 设计控件 / Mica 材质 / 主题 |
-| `CommunityToolkit.Mvvm` | MVVM（ObservableObject / RelayCommand） |
-| `Microsoft.Extensions.Hosting` | 依赖注入 + 应用生命周期 |
-| `Microsoft.Extensions.DependencyInjection` | DI 容器 |
-| `Serilog` + `Serilog.Sinks.File` | 日志 |
-| `Hardcodet.NotifyIcon.Wpf` | 系统托盘图标（WPF-UI 自带 TrayIcon 也可） |
-| `System.Text.Json` | 配置/数据持久化（.NET 内置） |
+输出：
+- dist/SidePeek-<版本>-gpui-win-x64/SidePeek.exe
+- dist/SidePeek-<版本>-gpui-win-x64.zip
 
-> 数据存储默认用 JSON 文件，存放在 `%AppData%\SidePeek\`。若便签数据量增大，可后续切换到 SQLite（`Microsoft.Data.Sqlite` 或 `LiteDB`）。
+部署到其他电脑需要支持的 Windows/显卡驱动和 Microsoft Visual C++ x64 运行库。若系统报告缺少 VCRUNTIME DLL，请安装微软官方 Visual C++ Redistributable。
 
-## 6. 常用命令速查
+## 原生渲染与集成验证
 
-```powershell
-dotnet restore                       # 还原 NuGet 依赖
-dotnet build                         # 编译
-dotnet run --project src/SidePeek.App # 运行
-dotnet test                          # 运行单元测试
+测试使用独立目录，不读取真实便签或采集系统剪贴板，不修改开机自启。使用 GPUI 官方 render_to_image 验证真实 DirectX 渲染，覆盖各页面、深色主题和收起状态。
 
-# 打包为单文件 exe（输出到 dist\）
-.\build.ps1                          # 普通打包，不修改版本号
-.\build.ps1 -SelfContained           # 普通自包含打包，不修改版本号
+~~~powershell
+$env:SIDEPEEK_DATA_DIR = Join-Path $PWD '.tools\smoke-data'
+$env:SIDEPEEK_SMOKE_TEST = '1'
+cargo run --locked --features smoke-test
+Get-Content "$env:SIDEPEEK_DATA_DIR\smoke-result.txt"
+~~~
 
-# 发布打包：先自增版本号，再调用 build.ps1 打包
-.\build-release.ps1                  # 默认递增 Patch，例如 0.3.0 -> 0.3.1
-.\build-release.ps1 -Part Minor      # 递增 Minor，例如 0.3.1 -> 0.4.0
-.\build-release.ps1 -Part Major      # 递增 Major，例如 0.4.0 -> 1.0.0
-```
+每次测试请使用空的独立目录。结果为 PASS 时，13 张截图位于该目录 screenshots 下；同时检查原生表面、逻辑视口与停靠矩形的尺寸一致性，以及收起后再次展开。该测试功能不会进入普通发行包。
 
-## 8. 运行时快捷键与托盘
+自动测试覆盖旧 JSON/日期兼容、未知字段保留、原子写入与归档恢复、连续悬停/DPI/固定窗口、参数替换、剪贴板去重/上限、stdout/stderr/退出码与进程树中断。键鼠操作、中文输入法候选窗、多屏热插拔和实际开机自启仍建议在目标机器上做人工验收。
 
-- 全局热键 **Ctrl + Alt + S**：展开 / 收起面板。
-- 鼠标在屏幕停靠边中部的小触发块连续停留达到“展开延时”（默认 1 秒）后展开；移开自动收起。
-- 系统托盘图标：双击切换显示；右键菜单含「设置」「开机自启」开关与「退出」。
-- 数据保存在 `%AppData%\SidePeek\`（`notes.json` / `completed-notes.json` / `commands.json` / `tools.json` / `clipboard.json` / `settings.json`）。
+## 数据
 
-## 7. 网络代理（本机环境）
-
-构建脚本默认仅在 `dotnet publish` 期间使用本机 HTTP 代理 `127.0.0.1:10808`，不会修改系统或当前终端的环境变量。需要改用其他代理或直连时：
-
-```powershell
-.\build.ps1 -NuGetProxy 'http://127.0.0.1:其他端口'
-.\build.ps1 -NuGetProxy ''
-```
+默认位置为 %AppData%\SidePeek。支持 SIDEPEEK_DATA_DIR 覆盖，便于开发隔离。首次写入已有文件前保留 backup-before-gpui 备份；日志位于 logs/。退出旧版后再运行新版，二者使用相同单实例锁。
