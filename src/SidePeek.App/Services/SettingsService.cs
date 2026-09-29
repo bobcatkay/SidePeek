@@ -101,12 +101,19 @@ public static class SettingsService
 
         settings.Hotkey ??= new HotkeySettings();
 
-        settings.Hotkey.Key = settings.Hotkey.Key.Trim().ToUpperInvariant();
+        settings.Hotkey.Key = (settings.Hotkey.Key ?? "S").Trim().ToUpperInvariant();
         if (!SupportedHotkeyKeys.Contains(settings.Hotkey.Key))
             settings.Hotkey.Key = "S";
 
         if (!settings.Hotkey.Control && !settings.Hotkey.Alt && !settings.Hotkey.Shift)
             settings.Hotkey.Control = true;
+
+        settings.ScreenshotHotkey ??= new HotkeySettings { Key = "A" };
+        settings.ScreenshotHotkey.Key = (settings.ScreenshotHotkey.Key ?? "A").Trim().ToUpperInvariant();
+        if (!SupportedHotkeyKeys.Contains(settings.ScreenshotHotkey.Key))
+            settings.ScreenshotHotkey.Key = "A";
+        if (!settings.ScreenshotHotkey.Control && !settings.ScreenshotHotkey.Alt && !settings.ScreenshotHotkey.Shift)
+            settings.ScreenshotHotkey.Control = true;
     }
 
     private static bool IsKnownDisplay(string deviceName)

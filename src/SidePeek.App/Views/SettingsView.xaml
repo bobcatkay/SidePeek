@@ -187,7 +187,7 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.ColumnSpan="2" Text="全局热键" FontSize="15" FontWeight="SemiBold"
+                        <TextBlock Grid.ColumnSpan="2" Text="侧边栏热键" FontSize="15" FontWeight="SemiBold"
                                    Margin="0,0,0,12"
                                    Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
 
@@ -216,6 +216,31 @@
                             </Border>
                         </Grid>
                     </Grid>
+                </Border>
+                <TextBlock Text="{Binding HotkeyError}" Foreground="Tomato" TextWrapping="Wrap" Margin="0,0,0,8" />
+
+                <Border Style="{StaticResource SettingsGroup}">
+                    <StackPanel>
+                        <TextBlock Text="截图热键" FontSize="15" FontWeight="SemiBold" Margin="0,0,0,12"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                        <WrapPanel Margin="0,0,0,12">
+                            <CheckBox Content="Ctrl" Margin="0,0,10,0" IsChecked="{Binding ScreenshotHotkeyControl, Mode=TwoWay}" />
+                            <CheckBox Content="Alt" Margin="0,0,10,0" IsChecked="{Binding ScreenshotHotkeyAlt, Mode=TwoWay}" />
+                            <CheckBox Content="Shift" IsChecked="{Binding ScreenshotHotkeyShift, Mode=TwoWay}" />
+                        </WrapPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="92" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ComboBox ItemsSource="{Binding HotkeyKeys}" SelectedItem="{Binding ScreenshotHotkeyKey, Mode=TwoWay}" />
+                            <TextBlock Grid.Column="1" Text="{Binding ScreenshotHotkeyPreview}" Margin="10,0,0,0"
+                                       VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                        </Grid>
+                        <TextBlock Text="{Binding ScreenshotHotkeyError}" Foreground="Tomato" TextWrapping="Wrap" Margin="0,8,0,0" />
+                        <TextBlock Text="窗口吸附、区域框选、矩形/画笔标注；HDR 自动转换为 sRGB PNG。"
+                                   TextWrapping="Wrap" Margin="0,8,0,0" Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                    </StackPanel>
                 </Border>
             </StackPanel>
         </ScrollViewer>

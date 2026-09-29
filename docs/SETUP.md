@@ -1,65 +1,35 @@
-# SidePeek GPUI 开发环境
+# SidePeek 开发环境
 
-目标平台为 Windows 11 x64。当前实现使用 Rust 2024 + GPUI Kit 0.6.0；WPF 仅作为历史源码保留。
+- Windows 11 x64。
+- .NET 9 SDK；Visual Studio 可选，安装“.NET 桌面开发”工作负载。
+- 支持 DirectX 11/Desktop Duplication 的显卡驱动。
+- NuGet 依赖：CommunityToolkit.Mvvm、WPF-UI、Vortice.Direct3D11 3.8.3。
 
-## 工具
+打开 `SidePeek.slnx`，或显式指定 WPF 项目运行：
 
-- Rust MSVC 工具链，版本由根目录 rust-toolchain.toml 固定。通过 [Rust 官方安装程序](https://rustup.rs/) 安装。
-- Visual Studio 2022/2026 或 Build Tools，勾选“使用 C++ 的桌面开发”、MSVC x64 和 Windows 10/11 SDK。
-- PowerShell 7（打包脚本使用 ProcessStartInfo.ArgumentList）。
-- 支持 DirectX 的显卡驱动。
+```powershell
+dotnet run --project src/SidePeek.App/SidePeek.App.csproj
+```
 
-不再需要 .NET SDK、WPF-UI 或 Node.js。Rust 编译器会自动发现 MSVC 和 Windows SDK。
+## 发布
 
-## 常用命令
-
-在已配置 Rust PATH 的终端执行：
-
-~~~powershell
-cargo run --locked
-cargo test --locked
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
+```powershell
 .\build.ps1
-.\build.ps1 -Configuration Debug -Offline
+.\build.ps1 -NuGetProxy ''
+.\build.ps1 -NuGetProxy 'http://127.0.0.1:10809'
+.\build.ps1 -SelfContained
 .\build-release.ps1 -Part Minor
-~~~
+.\build-release.ps1 -NuGetProxy ''
+```
 
-本次迁移的本机工具链放在 .tools/cargo 和 .tools/rustup，未修改系统 PATH。构建脚本会自动识别；手动运行 Cargo 前可在当前 PowerShell 进程中设置：
+脚本默认沿用当前网络配置，不再强制指定本地代理端口。`-NuGetProxy <URL>` 可为本次发布指定代理；`-NuGetProxy ''` 清除本次发布的 `HTTP_PROXY`、`HTTPS_PROXY` 和 `ALL_PROXY` 环境变量。发布结束后恢复原环境；系统代理或 NuGet 配置中的代理仍需在对应配置中调整。两个脚本均支持 `-Proxy` 兼容别名。发布文件位于 `dist/win-x64/`，ZIP 位于 `dist/`；发行脚本修改 `.csproj` 的版本，失败会还原。
 
-~~~powershell
-$env:CARGO_HOME = Join-Path $PWD '.tools\cargo'
-$env:RUSTUP_HOME = Join-Path $PWD '.tools\rustup'
-$env:PATH = "$env:CARGO_HOME\bin;$env:PATH"
-~~~
+默认包依赖 .NET 9 Desktop Runtime；自包含包不要求安装运行时。源码及构建入口已经恢复为 .NET，保留现有 WPF 多屏/DPI 修复，不再需要 Rust 工具链。
 
-## 网络与打包
+## 数据及截图
 
-build.ps1 的默认代理为 http://127.0.0.1:10808，仅传给 Cargo 子进程；脚本退出后不会改变终端或系统代理。传入 -Proxy '' 可直连，-Offline 使用本机缓存。旧参数 -NuGetProxy 是 -Proxy 的兼容别名；-SelfContained 可继续传入，GPUI 本身不依赖 .NET。
+数据仍位于 `%AppData%\SidePeek`，日志位于该目录下的 `logs/`。新旧实现使用相同单实例锁；运行 .NET 版本前先退出旧程序。
 
-普通构建不会修改版本。build-release.ps1 递增 Cargo.toml 的版本，同步 Cargo.lock，再生成 ZIP；失败时同时回滚两份文件。
+截图默认 `Ctrl+Alt+A`，侧边栏默认 `Ctrl+Alt+S`。HDR 自动映射为 sRGB；PNG 和剪贴板输出均为 SDR。受系统保护的画面可能被系统遮挡；DirectX 采集失败会显示原因并恢复侧边栏。
 
-输出：
-- dist/SidePeek-<版本>-gpui-win-x64/SidePeek.exe
-- dist/SidePeek-<版本>-gpui-win-x64.zip
-
-部署到其他电脑需要支持的 Windows/显卡驱动和 Microsoft Visual C++ x64 运行库。若系统报告缺少 VCRUNTIME DLL，请安装微软官方 Visual C++ Redistributable。
-
-## 原生渲染与集成验证
-
-测试使用独立目录，不读取真实便签或采集系统剪贴板，不修改开机自启。使用 GPUI 官方 render_to_image 验证真实 DirectX 渲染，覆盖各页面、深色主题和收起状态。
-
-~~~powershell
-$env:SIDEPEEK_DATA_DIR = Join-Path $PWD '.tools\smoke-data'
-$env:SIDEPEEK_SMOKE_TEST = '1'
-cargo run --locked --features smoke-test
-Get-Content "$env:SIDEPEEK_DATA_DIR\smoke-result.txt"
-~~~
-
-每次测试请使用空的独立目录。结果为 PASS 时，13 张截图位于该目录 screenshots 下；同时检查原生表面、逻辑视口与停靠矩形的尺寸一致性，以及收起后再次展开。该测试功能不会进入普通发行包。
-
-自动测试覆盖旧 JSON/日期兼容、未知字段保留、原子写入与归档恢复、连续悬停/DPI/固定窗口、参数替换、剪贴板去重/上限、stdout/stderr/退出码与进程树中断。键鼠操作、中文输入法候选窗、多屏热插拔和实际开机自启仍建议在目标机器上做人工验收。
-
-## 数据
-
-默认位置为 %AppData%\SidePeek。支持 SIDEPEEK_DATA_DIR 覆盖，便于开发隔离。首次写入已有文件前保留 backup-before-gpui 备份；日志位于 logs/。退出旧版后再运行新版，二者使用相同单实例锁。
+按 AGENTS.md，除非用户明确要求，不执行编译、构建、测试、Lint、静态检查或主动触发 CI。此次功能的硬件运行验收尚未执行，具体操作见 [SCREENSHOTS.md](SCREENSHOTS.md)。

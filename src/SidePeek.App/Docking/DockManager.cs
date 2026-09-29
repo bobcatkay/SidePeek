@@ -39,6 +39,7 @@ public sealed class DockManager
     private DateTime? _insideTriggerSince;
     private DateTime? _outsideSince;
     private bool _suspended;
+    private bool _screenshotSuspended;
     private bool _topmostPromotionFailureLogged;
     private bool _displayReadFailureLogged;
 
@@ -121,6 +122,19 @@ public sealed class DockManager
     }
 
     public void Resume() => _suspended = false;
+
+    public void SuspendForScreenshot()
+    {
+        _screenshotSuspended = true;
+        _insideTriggerSince = null;
+    }
+
+    public void ResumeAfterScreenshot()
+    {
+        _screenshotSuspended = false;
+        _insideTriggerSince = null;
+        _outsideSince = null;
+    }
 
     public void SetEdge(DockEdge edge, bool expanded = false)
         => SetPlacement(edge, _displayDeviceName, expanded);
@@ -214,7 +228,7 @@ public sealed class DockManager
         if (_displayRefreshClock.Elapsed >= DisplayRefreshInterval)
             RefreshPlacement();
 
-        if (_suspended)
+        if (_suspended || _screenshotSuspended)
             return;
 
         if (!NativeMethods.GetCursorPos(out var p))

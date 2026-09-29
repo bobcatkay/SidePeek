@@ -39,6 +39,12 @@ public partial class DockWindow : Window, IDockViewport
 
     public void ResumeDock() => _dock?.Resume();
 
+    public void StartScreenshot() => ((App)Application.Current).Screenshots?.Start();
+
+    internal void SuspendDockForScreenshot() => _dock?.SuspendForScreenshot();
+
+    internal void ResumeDockAfterScreenshot() => _dock?.ResumeAfterScreenshot();
+
     /// <summary>展开/收起切换（供托盘双击 / 菜单调用）。</summary>
     public void ToggleVisibility() => _dock?.Toggle();
 
@@ -101,7 +107,7 @@ public partial class DockWindow : Window, IDockViewport
 
         UnregisterHotkey();
 
-        uint modifiers = 0;
+        uint modifiers = NativeMethods.MOD_NOREPEAT;
         if (hotkey.Control)
             modifiers |= NativeMethods.MOD_CONTROL;
         if (hotkey.Alt)
@@ -109,7 +115,7 @@ public partial class DockWindow : Window, IDockViewport
         if (hotkey.Shift)
             modifiers |= NativeMethods.MOD_SHIFT;
 
-        if (modifiers == 0 || !Enum.TryParse(hotkey.Key, ignoreCase: true, out Key key))
+        if (modifiers == NativeMethods.MOD_NOREPEAT || !Enum.TryParse(hotkey.Key, ignoreCase: true, out Key key))
             return;
 
         uint virtualKey = (uint)KeyInterop.VirtualKeyFromKey(key);
@@ -267,11 +273,10 @@ public partial class DockWindow : Window, IDockViewport
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        ShowTab(TabNotes);
-        _clipboardView ??= new ClipboardView();
-
         if (!_startupShown)
         {
+            ShowTab(TabNotes);
+            _clipboardView ??= new ClipboardView();
             _startupShown = true;
             ApplyAcrylicBackdrop();
             Opacity = 1;
@@ -306,6 +311,8 @@ public partial class DockWindow : Window, IDockViewport
     }
 
     private void OnOpenSettings(object sender, RoutedEventArgs e) => OpenSettings();
+
+    private void OnScreenshot(object sender, RoutedEventArgs e) => StartScreenshot();
 
     private void OnPinToggled(object sender, RoutedEventArgs e)
     {

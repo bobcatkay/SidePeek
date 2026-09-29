@@ -1,40 +1,143 @@
 <#
 .SYNOPSIS
-Build and package the Rust/GPUI implementation of SidePeek.
-.PARAMETER Proxy
-Process-local Cargo HTTP proxy. Use an empty string for a direct connection.
+    Build and package SidePeek as a single-file executable.
+
 .PARAMETER SelfContained
-Compatibility parameter: GPUI builds already run without .NET.
+    Bundle the .NET runtime (no .NET install required on target, ~150MB).
+    Default is framework-dependent (requires .NET 9 Desktop Runtime).
+
+.PARAMETER Runtime
+    Target runtime identifier. Default: win-x64.
+
+.PARAMETER Configuration
+    Build configuration. Default: Release.
+
+.PARAMETER NuGetProxy
+    Optional HTTP proxy override used only for the dotnet publish process.
+    By default, preserve the current network configuration. An explicit empty string clears proxy environment variables.
+
+.EXAMPLE
+    .\build.ps1
+    .\build.ps1 -SelfContained
+    .\build.ps1 -NuGetProxy "http://127.0.0.1:10809"
+    .\build.ps1 -NuGetProxy ""
 #>
 param(
-    [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
-    [ValidateSet('win-x64')][string]$Runtime = 'win-x64',
-    [Alias('NuGetProxy')][AllowEmptyString()][string]$Proxy = 'http://127.0.0.1:10808',
     [switch]$SelfContained,
-    [switch]$Offline
+    [ValidateSet("win-x64")]
+    [string]$Runtime = "win-x64",
+    [string]$Configuration = "Release",
+    [Alias("Proxy")]
+    [AllowEmptyString()]
+    [string]$NuGetProxy
 )
-$ErrorActionPreference = 'Stop'
-. (Join-Path $PSScriptRoot 'scripts\cargo.ps1')
-$cargoArguments = @('build', '--locked')
-if ($Configuration -eq 'Release') { $cargoArguments += '--release' }
-if ($Offline) { $cargoArguments += '--offline' }
-Invoke-SidePeekCargo -Arguments $cargoArguments -Proxy $Proxy
-$metadata = Get-SidePeekMetadata
-$version = $metadata.packages[0].version
-$profile = if ($Configuration -eq 'Release') { 'release' } else { 'debug' }
-$executable = Join-Path $metadata.target_directory "$profile\sidepeek.exe"
-if (-not (Test-Path -LiteralPath $executable)) { throw "Executable not found: $executable" }
-# Versioned output avoids removing a running app or older WPF release packages.
-$destination = Join-Path $PSScriptRoot "dist\SidePeek-$version-gpui-$Runtime"
-New-Item -ItemType Directory -Force -Path $destination | Out-Null
-Copy-Item -LiteralPath $executable -Destination (Join-Path $destination 'SidePeek.exe') -Force
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'README.md') -Destination $destination -Force
-$packageDocs = Join-Path $destination 'docs'
-New-Item -ItemType Directory -Force -Path $packageDocs | Out-Null
-foreach ($document in @('SETUP.md', 'ARCHITECTURE.md', 'TASKS.md')) {
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot "docs\$document") -Destination $packageDocs -Force
+
+$ErrorActionPreference = "Stop"
+$root = $PSScriptRoot
+$project = Join-Path $root "src\SidePeek.App\SidePeek.App.csproj"
+$publishDir = Join-Path $root "dist\$Runtime"
+$distRoot = Join-Path $root "dist"
+
+Write-Host "==> Cleaning previous output" -ForegroundColor Cyan
+if (Test-Path -LiteralPath $publishDir) {
+    $resolvedPublish = (Resolve-Path -LiteralPath $publishDir).Path
+    $resolvedDist = [IO.Path]::GetFullPath($distRoot) + [IO.Path]::DirectorySeparatorChar
+    if (-not $resolvedPublish.StartsWith($resolvedDist, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Publish output must stay inside the dist directory."
+    }
+    Remove-Item -LiteralPath $resolvedPublish -Recurse -Force
 }
-$archive = "$destination.zip"
-Compress-Archive -LiteralPath (Join-Path $destination 'SidePeek.exe'), (Join-Path $destination 'README.md'), $packageDocs -DestinationPath $archive -Force
-Write-Host "Executable: $(Join-Path $destination 'SidePeek.exe')"
-Write-Host "Archive: $archive"
+New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
+
+if ($SelfContained) { $scValue = "true" } else { $scValue = "false" }
+Write-Host "==> Publishing (self-contained=$scValue, runtime=$Runtime, config=$Configuration)" -ForegroundColor Cyan
+
+$publishArgs = @(
+    "publish", $project,
+    "-c", $Configuration,
+    "-r", $Runtime,
+    "--self-contained", $scValue,
+    "-o", $publishDir,
+    "-p:PublishSingleFile=true",
+    "-p:IncludeNativeLibrariesForSelfExtract=true",
+    "-p:DebugType=none",
+    "--nologo"
+)
+
+# Single-file compression is only supported for self-contained publishes.
+if ($SelfContained) {
+    $publishArgs += "-p:EnableCompressionInSingleFile=true"
+}
+
+$previousProxyEnvironment = @{
+    HTTP_PROXY = $env:HTTP_PROXY
+    HTTPS_PROXY = $env:HTTPS_PROXY
+    ALL_PROXY = $env:ALL_PROXY
+    NO_PROXY = $env:NO_PROXY
+}
+
+[Uri]$nugetProxyUri = $null
+$hasProxyOverride = $PSBoundParameters.ContainsKey("NuGetProxy")
+if ($hasProxyOverride -and -not [string]::IsNullOrWhiteSpace($NuGetProxy)) {
+    $isValidProxy = [Uri]::TryCreate($NuGetProxy, [UriKind]::Absolute, [ref]$nugetProxyUri)
+    if (-not $isValidProxy -or $nugetProxyUri.Scheme -notin "http", "https") {
+        throw "NuGetProxy must be an absolute HTTP(S) URL or an empty string."
+    }
+}
+
+$publishExitCode = $null
+try {
+    if ($null -ne $nugetProxyUri) {
+        # Override stale terminal proxy variables only for this publish, then restore them below.
+        $env:HTTP_PROXY = $nugetProxyUri.AbsoluteUri
+        $env:HTTPS_PROXY = $nugetProxyUri.AbsoluteUri
+        Remove-Item Env:ALL_PROXY -ErrorAction SilentlyContinue
+        Remove-Item Env:NO_PROXY -ErrorAction SilentlyContinue
+
+        $proxyDisplay = "$($nugetProxyUri.Scheme)://$($nugetProxyUri.Host):$($nugetProxyUri.Port)"
+        Write-Host "==> NuGet proxy (process-local): $proxyDisplay" -ForegroundColor Cyan
+    }
+    elseif ($hasProxyOverride) {
+        Remove-Item Env:HTTP_PROXY, Env:HTTPS_PROXY, Env:ALL_PROXY -ErrorAction SilentlyContinue
+        Write-Host "==> NuGet proxy environment cleared for this publish" -ForegroundColor Cyan
+    }
+    else {
+        Write-Host "==> NuGet network configuration inherited from the current environment" -ForegroundColor Cyan
+    }
+
+    dotnet @publishArgs
+    $publishExitCode = $LASTEXITCODE
+}
+finally {
+    foreach ($proxyVariableName in $previousProxyEnvironment.Keys) {
+        [Environment]::SetEnvironmentVariable(
+            $proxyVariableName,
+            $previousProxyEnvironment[$proxyVariableName],
+            [EnvironmentVariableTarget]::Process)
+    }
+}
+
+if ($null -eq $publishExitCode -or $publishExitCode -ne 0) {
+    throw "dotnet publish failed (exit $publishExitCode)"
+}
+
+$exe = Join-Path $publishDir "SidePeek.exe"
+if (-not (Test-Path $exe)) { throw "Executable not found: $exe" }
+
+$version = (Get-Item $exe).VersionInfo.ProductVersion
+if (-not $version) { $version = "0.0.0" }
+$suffix = ""
+if ($SelfContained) { $suffix = "-selfcontained" }
+$zipName = "SidePeek-$version-$Runtime$suffix.zip"
+$zipPath = Join-Path $distRoot $zipName
+if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
+
+Write-Host "==> Creating zip: $zipName" -ForegroundColor Cyan
+Compress-Archive -Path (Join-Path $publishDir "*") -DestinationPath $zipPath
+
+$sizeMb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
+Write-Host ""
+Write-Host "Build complete." -ForegroundColor Green
+Write-Host "  Executable : $exe ($sizeMb MB)"
+Write-Host "  Publish dir: $publishDir"
+Write-Host "  Zip        : $zipPath"

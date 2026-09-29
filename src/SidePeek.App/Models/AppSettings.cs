@@ -28,4 +28,5 @@ public sealed class AppSettings
     public AppThemeMode Theme { get; set; } = AppThemeMode.Light;
     public bool StartWithWindows { get; set; }
     public HotkeySettings Hotkey { get; set; } = new();
+    public HotkeySettings ScreenshotHotkey { get; set; } = new() { Key = "A" };
 }

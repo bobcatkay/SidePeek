@@ -11,6 +11,7 @@ public sealed class TrayService : IDisposable
     private readonly Forms.NotifyIcon _icon;
     private readonly DockWindow _window;
     private readonly Forms.ToolStripMenuItem _startupItem;
+    private readonly Forms.ToolStripMenuItem _screenshotItem;
     private bool _syncingStartup;
 
     public TrayService(DockWindow window)
@@ -32,6 +33,10 @@ public sealed class TrayService : IDisposable
         var settingsItem = new Forms.ToolStripMenuItem("设置");
         settingsItem.Click += (_, _) => _window.OpenSettings();
 
+        _screenshotItem = new Forms.ToolStripMenuItem("截图");
+        _screenshotItem.Click += (_, _) => _window.StartScreenshot();
+        UpdateScreenshotLabel();
+
         _startupItem = new Forms.ToolStripMenuItem("开机自启")
         {
             CheckOnClick = true,
@@ -48,6 +53,7 @@ public sealed class TrayService : IDisposable
         exitItem.Click += (_, _) => System.Windows.Application.Current.Shutdown();
 
         menu.Items.Add(toggleItem);
+        menu.Items.Add(_screenshotItem);
         menu.Items.Add(settingsItem);
         menu.Items.Add(_startupItem);
         menu.Items.Add(new Forms.ToolStripSeparator());
@@ -60,6 +66,7 @@ public sealed class TrayService : IDisposable
 
     private void OnSettingsChanged(object? sender, EventArgs e)
     {
+        UpdateScreenshotLabel();
         _syncingStartup = true;
         try
         {
@@ -70,6 +77,9 @@ public sealed class TrayService : IDisposable
             _syncingStartup = false;
         }
     }
+
+    private void UpdateScreenshotLabel()
+        => _screenshotItem.Text = $"截图（{ScreenshotService.DescribeHotkey(SettingsService.Current.ScreenshotHotkey)}）";
 
     private static Drawing.Icon CreateIcon()
     {

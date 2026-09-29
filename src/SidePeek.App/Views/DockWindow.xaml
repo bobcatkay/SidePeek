@@ -128,6 +128,9 @@
                                Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Style="{StaticResource HeaderIconButton}" Click="OnScreenshot" ToolTip="截图">
+                        <TextBlock Text="&#xE722;" FontFamily="Segoe MDL2 Assets" FontSize="16" />
+                    </Button>
                     <ToggleButton x:Name="PinToggle"
                                   Style="{StaticResource HeaderToggleIconButton}"
                                   Checked="OnPinToggled"

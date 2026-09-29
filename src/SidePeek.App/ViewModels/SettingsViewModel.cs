@@ -36,6 +36,13 @@ public sealed class SettingsViewModel : ObservableObject
     private bool _hotkeyShift;
     private string _hotkeyKey = "S";
     private string _hotkeyPreview = string.Empty;
+    private string _hotkeyError = string.Empty;
+    private bool _screenshotHotkeyControl;
+    private bool _screenshotHotkeyAlt;
+    private bool _screenshotHotkeyShift;
+    private string _screenshotHotkeyKey = "A";
+    private string _screenshotHotkeyPreview = string.Empty;
+    private string _screenshotHotkeyError = string.Empty;
 
     public SettingsViewModel()
     {
@@ -207,6 +214,47 @@ public sealed class SettingsViewModel : ObservableObject
         private set => SetProperty(ref _hotkeyPreview, value);
     }
 
+    public string HotkeyError
+    {
+        get => _hotkeyError;
+        private set => SetProperty(ref _hotkeyError, value);
+    }
+
+    public bool ScreenshotHotkeyControl
+    {
+        get => _screenshotHotkeyControl;
+        set { if (SetProperty(ref _screenshotHotkeyControl, value) && !_loading) UpdateScreenshotHotkey(); }
+    }
+    public bool ScreenshotHotkeyAlt
+    {
+        get => _screenshotHotkeyAlt;
+        set { if (SetProperty(ref _screenshotHotkeyAlt, value) && !_loading) UpdateScreenshotHotkey(); }
+    }
+    public bool ScreenshotHotkeyShift
+    {
+        get => _screenshotHotkeyShift;
+        set { if (SetProperty(ref _screenshotHotkeyShift, value) && !_loading) UpdateScreenshotHotkey(); }
+    }
+    public string ScreenshotHotkeyKey
+    {
+        get => _screenshotHotkeyKey;
+        set
+        {
+            if (!string.IsNullOrWhiteSpace(value) && SetProperty(ref _screenshotHotkeyKey, value) && !_loading)
+                UpdateScreenshotHotkey();
+        }
+    }
+    public string ScreenshotHotkeyPreview
+    {
+        get => _screenshotHotkeyPreview;
+        private set => SetProperty(ref _screenshotHotkeyPreview, value);
+    }
+    public string ScreenshotHotkeyError
+    {
+        get => _screenshotHotkeyError;
+        private set => SetProperty(ref _screenshotHotkeyError, value);
+    }
+
     private void OnSettingsChanged(object? sender, EventArgs e) => LoadFromSettings();
 
     private void LoadFromSettings()
@@ -229,6 +277,12 @@ public sealed class SettingsViewModel : ObservableObject
             HotkeyShift = settings.Hotkey.Shift;
             HotkeyKey = settings.Hotkey.Key;
             RefreshHotkeyPreview();
+            ScreenshotHotkeyControl = settings.ScreenshotHotkey.Control;
+            ScreenshotHotkeyAlt = settings.ScreenshotHotkey.Alt;
+            ScreenshotHotkeyShift = settings.ScreenshotHotkey.Shift;
+            ScreenshotHotkeyKey = settings.ScreenshotHotkey.Key;
+            ScreenshotHotkeyPreview = ScreenshotService.DescribeHotkey(settings.ScreenshotHotkey);
+            ScreenshotHotkeyError = (System.Windows.Application.Current as App)?.Screenshots?.HotkeyError ?? string.Empty;
         }
         finally
         {
@@ -238,6 +292,17 @@ public sealed class SettingsViewModel : ObservableObject
 
     private void UpdateHotkey()
     {
+        var requested = new HotkeySettings
+        {
+            Control = HotkeyControl, Alt = HotkeyAlt, Shift = HotkeyShift, Key = HotkeyKey
+        };
+        if (ScreenshotService.DescribeHotkey(requested) == ScreenshotService.DescribeHotkey(SettingsService.Current.ScreenshotHotkey))
+        {
+            LoadFromSettings();
+            HotkeyError = "侧边栏热键和截图热键不能相同。";
+            return;
+        }
+        HotkeyError = string.Empty;
         SettingsService.Update(settings =>
         {
             settings.Hotkey.Control = HotkeyControl;
@@ -246,6 +311,31 @@ public sealed class SettingsViewModel : ObservableObject
             settings.Hotkey.Key = HotkeyKey;
         });
         RefreshHotkeyPreview();
+    }
+
+    private void UpdateScreenshotHotkey()
+    {
+        var next = new HotkeySettings
+        {
+            Control = ScreenshotHotkeyControl, Alt = ScreenshotHotkeyAlt,
+            Shift = ScreenshotHotkeyShift, Key = ScreenshotHotkeyKey
+        };
+        string error = string.Empty;
+        if (!next.Control && !next.Alt && !next.Shift)
+            error = "请至少选择一个修饰键。";
+        else if (ScreenshotService.DescribeHotkey(next) == ScreenshotService.DescribeHotkey(SettingsService.Current.Hotkey))
+            error = "侧边栏热键和截图热键不能相同。";
+        else if (System.Windows.Application.Current is App { Screenshots: { } service })
+            service.TryRegisterHotkey(next, out error);
+        if (!string.IsNullOrEmpty(error))
+        {
+            LoadFromSettings();
+            ScreenshotHotkeyError = error;
+            return;
+        }
+        SettingsService.Update(settings => settings.ScreenshotHotkey = next);
+        ScreenshotHotkeyPreview = ScreenshotService.DescribeHotkey(next);
+        ScreenshotHotkeyError = string.Empty;
     }
 
     private void RefreshHotkeyPreview()

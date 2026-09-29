@@ -11,6 +11,7 @@ public partial class App : Application
     private Mutex? _singleInstance;
     private TrayService? _tray;
     private DockWindow? _window;
+    internal ScreenshotService? Screenshots { get; private set; }
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -33,11 +34,13 @@ public partial class App : Application
         _window = new DockWindow();
         _window.Show();
 
+        Screenshots = new ScreenshotService(_window);
         _tray = new TrayService(_window);
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        Screenshots?.Dispose();
         _tray?.Dispose();
         _singleInstance?.Dispose();
         base.OnExit(e);

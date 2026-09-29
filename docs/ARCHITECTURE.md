@@ -1,61 +1,40 @@
-# SidePeek GPUI 架构
+# SidePeek .NET/WPF 架构
 
-从 v0.4.0 起，根目录 Cargo 工程是应用入口。界面、状态和平台服务均使用 Rust，实现依赖 gpui-kit 0.6.0，窗口由 GPUI/DirectX 渲染。旧 src/SidePeek.App 不参与新构建，保留用于迁移对照。
+当前 main 使用 `SidePeek.slnx` 和 `src/SidePeek.App/SidePeek.App.csproj`，目标为 `net9.0-windows`。界面使用 WPF/WPF-UI，视图模型使用 CommunityToolkit.Mvvm；截图采集使用 Vortice.Direct3D11 3.8.3 及其 DXGI 依赖。
 
 ## 模块
 
-| 文件 | 职责 |
+| 模块 | 职责 |
 |---|---|
-| src/main.rs | 单实例、存储、日志、GPUI 初始化、Root 窗口 |
-| src/ui/mod.rs | 应用状态、订阅、自动保存、后台任务协调、停靠轮询 |
-| src/ui/views.rs | 四个功能页、卡片、搜索、拖动排序、命令输出 |
-| src/ui/editors.rs | 便签编辑实体、命令/工具/参数/设置表单 |
-| src/model.rs | 与 WPF 兼容的模型、日期解析、参数展开和集合逻辑 |
-| src/store.rs | JSON、首次写入备份、原子替换、便签归档事务恢复 |
-| src/docking.rs | 纯停靠状态机、显示器几何与动画插值 |
-| src/platform/windows.rs | 托盘、全局热键、显示器/DPI、注册表、窗口定位 |
-| src/command.rs | cmd.exe、输出队列、Windows Job Object 与进程树中断 |
-| src/resources.rs | 集中文案、尺寸、颜色与日志 TAG |
-| src/ui/smoke.rs | 可选原生渲染/集成测试，不进入普通发行包 |
+| App.xaml.cs | 单实例、设置/主题初始化、主窗口、托盘和截图服务生命周期 |
+| Docking/DockManager.cs | 边缘停靠、悬停轮询、动画、显示器和 DPI 变化 |
+| Views/DockWindow.xaml | 侧边栏、四个功能页、设置和截图入口 |
+| ViewModels | 便签、命令、工具、剪贴板与设置状态 |
+| Services/SettingsService.cs | 设置读取、规范化、持久化和变更通知 |
+| Services/JsonStore.cs | AppData 下的 JSON 持久化 |
+| Services/CommandExecutor.cs | 命令执行、输出、取消及进程树终止 |
+| Services/ScreenshotService.cs | 独立截图热键、隐藏/恢复侧边栏、采集取消和编辑会话 |
+| Services/ScreenshotCapture.cs | 每个适配器的 Direct3D 设备、输出采集、旋转和 HDR 转换 |
+| Interop/ScreenshotNative.cs | DWM 窗口吸附候选、截图窗口排除、SDR 白电平及物理坐标 |
+| Views/ScreenshotOverlayWindow.cs | 虚拟桌面遮罩、选区、矢量标注、撤销/重做、导出 |
+| Views/ScreenshotToolbarWindow.xaml | 当前显示器顶部的工具栏、颜色、粗细和操作状态 |
 
-## GPUI 界面与生命周期
+## 截图流程
 
-应用启动调用 gpui_kit::init，注册内置图标资源，窗口最外层为 gpui_component::Root。表单使用 GPUI Kit 的 Input、Textarea、Button 和 Checkbox，支持主题、焦点和控件自带的键盘交互。
+截图服务在 UI 线程接收热键或按钮操作，暂停停靠并隐藏侧边栏，等候合成器完成隐藏后在后台采集。重复触发会激活现有工具栏，不同时创建多个会话。退出程序会取消采集并关闭编辑窗口。
 
-便签输入状态保存在 Entity 中，渲染时不重建；变更事件更新模型，600ms 防抖保存。增删、归档和排序时重建对应编辑实体与订阅，避免旧索引指向其他便签。输出使用只读 Textarea，可选择和复制。
+按原生显示器物理坐标建立虚拟桌面，按适配器创建 D3D11 设备。`IDXGIOutput5.DuplicateOutput1` 声明支持 FP16/BGRA8，逐输出复制到 CPU staging 纹理，按行跨度和旋转方向写入统一图像。每个已获取的帧和映射都在 finally 中释放，所有 COM 对象按使用范围 Dispose。
 
-主窗口无标题栏，不显示在任务栏，常驻托盘。系统关窗请求收起窗口；托盘退出先保存数据、取消所有命令并等待其结束。发生保存错误会显示重试入口，不悄悄丢弃内存中的更改。
+HDR 输出必须返回 FP16 scRGB；不满足时显示错误，避免用失真的 8 位画面替代。读取 Windows `DISPLAYCONFIG_SDR_WHITE_LEVEL`，按屏幕归一化亮度，再用共同高光曲线压缩 RGB 峰值并转换为 sRGB。查询白电平不可用时使用 80 nit 参考值。SDR BGRA8 直接复制。导出仅为带 sRGB 标记的 SDR PNG/剪贴板图像。
 
-## 停靠和刷新
+冻结画面使用可跨线程的 BitmapSource。覆盖窗口由 Win32 定位到整个虚拟桌面，绘制时抵消 WPF DPI 缩放；鼠标通过 PointToScreen 转成物理像素，选区、笔画和导出尺寸共用同一坐标系。窗口吸附使用按 Z 序枚举的可见窗口 DWM 边界，并排除本进程、最小化和 cloaked 窗口。
 
-几何使用 Win32 的显示器工作区物理像素，面板宽度按所选显示器 DPI 换算。左右停靠宽度为 420 DIP；收起触发条宽 6 DIP，高度为工作区高度的 10%。
+选区及标注存储独立于视图。标注颜色和粗细在创建笔画时固定，撤销/重做以完整笔画为单位。导出从冻结原图裁剪，在 96 DPI 的 DrawingVisual 中合成标注，确保一个单位等于一个输出像素；遮罩、手柄及工具栏不进入图片。
 
-停靠轮询间隔 25ms，动画时约 15ms，220ms cubic ease-out。鼠标必须连续停留满展开延时；移开后等待收起延时。固定窗口、编辑表单、设置、参数输入和输出查看期间暂停自动收起。
+保存先写入目标目录的临时文件，编码和刷新成功后替换最终路径。取消文件对话框或导出失败保留编辑会话。复制同时提供 Bitmap 和 PNG 数据，遇到剪贴板占用时短暂重试，成功后关闭会话。
 
-窗口按真实边界收缩；动画期间界面保持展开尺寸，通过视口裁切，避免逐帧重新换行。进入展开状态才提升置顶顺序，不每帧与其他置顶窗口争抢。
-
-Win32 的 SetWindowPos 会同步触发尺寸回调，回调无法重新借用正在更新的 GPUI 窗口。因此每次原生定位后显式同步 GPUI 逻辑视口，避免 DirectX 表面已缩放但布局及点击区域仍使用旧尺寸。
-
-时钟/内存仅在展开时每秒刷新。显示器拓扑每两秒检查一次；所选显示器拔出时回退主屏。剪贴板按序列号检测变化，最长每 900ms 读取一次，避免重复抓取。
-
-## 命令执行
-
-每条命令通过 cmd.exe /d /s /c 顺序执行。参数替换只扫描原始文本一次，支持多位序号，不会递归替换参数值中的百分号。
-
-子进程以挂起状态创建，先加入 Windows Job Object，再恢复执行，避免子孙进程先于 Job 绑定启动。中断、关闭执行界面或退出应用会终止该进程树；每条命令结束后关闭 Job，清理仍占用输出管道的子进程。需要常驻 GUI 应用时使用“工具”启动器。
-
-标准输出和标准错误合并到管道，后台读取，优先 UTF-8 解码，非 UTF-8 回退 Windows OEM 代码页。输出队列有界，界面最多保留末尾 512 KiB，避免长输出阻塞界面或无限占用内存。支持多个命令任务，静默执行仍保留结果入口。日志仅记录进程 ID、数量和结果，不记录命令正文、参数或输出。
-
-## 持久化与兼容
-
-保持原有六个文件名、PascalCase 字段及数值枚举。兼容带 BOM 的 UTF-8 JSON、WPF 无时区 DateTime 和带时区日期；未知字段会保留。时间无法解析的便签不会被历史清理删除。
-
-每次写入先生成同目录临时文件、sync_all，再原子替换。已有文件首次修改前复制到 backup-before-gpui，后续写入不覆盖原始备份。
-
-便签完成和恢复会同时修改 notes.json 与 completed-notes.json，先持久化 notes-transaction.json，再替换两个文件；启动时优先恢复未完成事务。解析失败会终止加载并保留原文件。
-
-快捷键修改失败时恢复原注册；系统设置或磁盘保存失败时回滚，避免界面显示“已保存”但系统没有生效。开机自启在当前用户 HKCU Run 项中管理。
+截图热键替换先注册另一个 ID，成功后注销旧 ID；注册失败保留旧热键，并在设置中显示原因。窗口关闭、取消或导出成功后恢复侧边栏及此前前台窗口。显示器拓扑发生变化时结束冻结会话，重新截图。
 
 ## 验证边界
 
-自动测试验证模型、文件恢复、停靠状态机和真实进程；可选 smoke-test 通过 GPUI 官方接口渲染页面并检查自动保存、归档恢复、参数命令和收起动画。测试截图不等同于人工键鼠或输入法、多屏设备验收。
+本次按 AGENTS.md 仅阅读代码和差异，未执行构建、测试或静态检查。实际 HDR 显示效果、多屏 DPI、显卡驱动及系统剪贴板交互尚需运行验收。
