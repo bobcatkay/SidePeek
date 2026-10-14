@@ -35,6 +35,7 @@ internal sealed class ScreenshotOverlayWindow : Window
     internal bool CanUndo => _annotations.Count > 0;
     internal bool CanRedo => _redo.Count > 0;
     internal bool CanExport => Selection is { IsEmpty: false } && !_surface.IsMouseCaptured;
+    internal int AnnotationVersion { get; private set; }
 
     internal ScreenshotOverlayWindow(DesktopCapture capture)
     {
@@ -97,7 +98,7 @@ internal sealed class ScreenshotOverlayWindow : Window
         if (!NativeMethods.SetWindowPos(new WindowInteropHelper(this).Handle, NativeMethods.HWND_TOPMOST,
                 (int)bounds.X, (int)bounds.Y, (int)bounds.Width, (int)bounds.Height, NativeMethods.SWP_NOACTIVATE))
             throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-        _surface.InvalidateVisual();
+        _surface.RequestRender();
     }
 
     internal void SetTool(ScreenshotTool tool)
@@ -110,6 +111,7 @@ internal sealed class ScreenshotOverlayWindow : Window
             Selection = null;
             _annotations.Clear();
             _redo.Clear();
+            AnnotationVersion++;
         }
         else if (Selection is null)
             return;
@@ -143,6 +145,7 @@ internal sealed class ScreenshotOverlayWindow : Window
         {
             _annotations.Add(draft);
             _redo.Clear();
+            AnnotationVersion++;
         }
         Draft = null;
         Refresh();
@@ -155,6 +158,7 @@ internal sealed class ScreenshotOverlayWindow : Window
         {
             _redo.Push(_annotations[^1]);
             _annotations.RemoveAt(_annotations.Count - 1);
+            AnnotationVersion++;
         }
         Refresh();
     }
@@ -163,15 +167,20 @@ internal sealed class ScreenshotOverlayWindow : Window
     {
         _surface.CancelGesture();
         if (_redo.TryPop(out var annotation))
+        {
             _annotations.Add(annotation);
+            AnnotationVersion++;
+        }
         Refresh();
     }
 
     internal void Refresh()
     {
-        _surface.InvalidateVisual();
+        _surface.RequestRender();
         _toolbar.Refresh();
     }
+
+    internal void RefreshSelectionInfo() => _toolbar.RefreshSelection();
 
     internal void ActivateTools()
     {
@@ -355,7 +364,7 @@ internal sealed class ScreenshotOverlayWindow : Window
             DrawAnnotation(drawing, draft);
     }
 
-    private static void DrawAnnotation(DrawingContext drawing, ScreenshotAnnotation annotation)
+    internal static void DrawAnnotation(DrawingContext drawing, ScreenshotAnnotation annotation)
     {
         if (annotation.Points.Count == 0)
             return;
@@ -364,6 +373,7 @@ internal sealed class ScreenshotOverlayWindow : Window
         {
             StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round
         };
+        pen.Freeze();
         if (annotation.Rectangle && annotation.Points.Count > 1)
             drawing.DrawRectangle(null, pen, new Rect(annotation.Points[0], annotation.Points[^1]));
         else if (annotation.Points.Count == 1)
@@ -376,6 +386,7 @@ internal sealed class ScreenshotOverlayWindow : Window
                 path.BeginFigure(annotation.Points[0], isFilled: false, isClosed: false);
                 path.PolyLineTo(annotation.Points.Skip(1).ToArray(), isStroked: true, isSmoothJoin: true);
             }
+            geometry.Freeze();
             drawing.DrawGeometry(null, pen, geometry);
         }
     }
@@ -383,57 +394,176 @@ internal sealed class ScreenshotOverlayWindow : Window
 
 internal sealed class ScreenshotSurface : FrameworkElement
 {
+    private const string LogTag = nameof(ScreenshotSurface);
+    private const byte DimmingAlpha = 120;
+    private const double SelectionBorderWidth = 2;
+    private const double SelectionHandleRadius = 3;
+    private const double SelectionDragThreshold = 3;
+    private const double SelectionEdgeTolerance = 8;
+    private const int UnrenderedAnnotationVersion = -1;
+    private const int RenderingTierShift = 16;
+    private static readonly Color SelectionBorderColor = Color.FromRgb(83, 182, 255);
     private readonly ScreenshotOverlayWindow _session;
+    private readonly DrawingVisual _background = new();
+    private readonly DrawingVisual _selection = new();
+    private readonly DrawingVisual _annotations = new();
+    private readonly DrawingVisual _interaction = new();
+    private readonly VisualCollection _visuals;
+    private readonly Rect _desktop;
+    private readonly ImageBrush _desktopBrush;
+    private readonly SolidColorBrush _dimBrush;
+    private System.Windows.Media.Pen? _border;
+    private DpiScale _dpi;
+    private bool _viewportReady;
+    private bool _renderPending;
+    private bool _selectionDirty = true;
+    private bool _clipReady;
+    private Rect? _renderedHighlight;
+    private Rect? _renderedSelection;
+    private int _annotationVersion = UnrenderedAnnotationVersion;
     private Point _start;
     private bool _selecting;
     private Rect? _originalSelection;
     private int _edges;
     private const int LeftEdge = 1, TopEdge = 2, RightEdge = 4, BottomEdge = 8;
+    private const int TopLeftCorner = LeftEdge | TopEdge, TopRightCorner = RightEdge | TopEdge;
+    private const int BottomLeftCorner = LeftEdge | BottomEdge, BottomRightCorner = RightEdge | BottomEdge;
 
     internal ScreenshotSurface(ScreenshotOverlayWindow session)
     {
         _session = session;
+        _visuals = new VisualCollection(this) { _background, _selection, _annotations, _interaction };
+        _desktop = new Rect(0, 0, session.Capture.Image.PixelWidth, session.Capture.Image.PixelHeight);
+        // 固定原图映射，只绘制选区矩形；整图加 Clip 会让动态层仍携带整桌面的绘制内容。
+        _desktopBrush = new ImageBrush(session.Capture.Image)
+        {
+            ViewportUnits = BrushMappingMode.Absolute,
+            Viewport = _desktop,
+            Stretch = Stretch.Fill,
+            TileMode = TileMode.None
+        };
+        _desktopBrush.Freeze();
+        _dimBrush = new SolidColorBrush(Color.FromArgb(DimmingAlpha, 0, 0, 0));
+        _dimBrush.Freeze();
         Focusable = true;
         Cursor = Cursors.Cross;
+        Loaded += (_, _) =>
+        {
+            RequestRender();
+            AppLogger.Info($"{LogTag}: screenshot layers ready; desktop={_desktop.Width}x{_desktop.Height}, renderingTier={RenderCapability.Tier >> RenderingTierShift}.");
+        };
+        Unloaded += (_, _) => CancelPendingRender();
     }
 
-    protected override void OnRender(DrawingContext drawing)
+    protected override int VisualChildrenCount => _visuals.Count;
+    protected override Visual GetVisualChild(int index) => _visuals[index];
+
+    protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
     {
-        base.OnRender(drawing);
-        var capture = _session.Capture;
+        base.OnRenderSizeChanged(sizeInfo);
+        RequestRender();
+    }
+
+    internal void RequestRender()
+    {
+        if (_renderPending || !IsLoaded)
+            return;
+        // 高频鼠标事件只更新状态，同一帧只提交一次绘制，也不触发 FrameworkElement 的布局失效。
+        _renderPending = true;
+        CompositionTarget.Rendering += RenderFrame;
+    }
+
+    private void CancelPendingRender()
+    {
+        if (!_renderPending)
+            return;
+        CompositionTarget.Rendering -= RenderFrame;
+        _renderPending = false;
+    }
+
+    private void UpdateViewport()
+    {
         var dpi = VisualTreeHelper.GetDpi(this);
-        drawing.PushTransform(new ScaleTransform(1 / dpi.DpiScaleX, 1 / dpi.DpiScaleY));
-        var desktop = new Rect(0, 0, capture.Image.PixelWidth, capture.Image.PixelHeight);
-        drawing.DrawImage(capture.Image, desktop);
+        if (_viewportReady && dpi.DpiScaleX == _dpi.DpiScaleX && dpi.DpiScaleY == _dpi.DpiScaleY)
+            return;
+        _dpi = dpi;
+        _viewportReady = true;
+        var transform = new ScaleTransform(1 / dpi.DpiScaleX, 1 / dpi.DpiScaleY);
+        transform.Freeze();
+        foreach (DrawingVisual visual in _visuals)
+            visual.Transform = transform;
+        _border = new System.Windows.Media.Pen(new SolidColorBrush(SelectionBorderColor), SelectionBorderWidth * dpi.DpiScaleX);
+        _border.Freeze();
+        // 暗化桌面是静态层，拖动只更新选区覆盖的原图和边框，避免每帧重建整个桌面。
+        using var drawing = _background.RenderOpen();
+        drawing.DrawImage(_session.Capture.Image, _desktop);
+        drawing.DrawRectangle(_dimBrush, null, _desktop);
+        _selectionDirty = true;
+    }
+
+    private void RenderFrame(object? sender, EventArgs e)
+    {
+        CancelPendingRender();
+        if (!IsLoaded)
+            return;
+        UpdateViewport();
         var highlight = _session.Selection ?? _session.Hover;
-        var dim = new SolidColorBrush(Color.FromArgb(120, 0, 0, 0));
+        if (_selectionDirty || _renderedHighlight != highlight)
+        {
+            using var image = _selection.RenderOpen();
+            if (highlight is { IsEmpty: false } selected)
+                image.DrawRectangle(_desktopBrush, null, selected);
+            _renderedHighlight = highlight;
+            _selectionDirty = false;
+        }
+        // 已提交标注不会随鼠标改变；移动/缩放选区只更新裁剪，撤销或新增时才重建矢量内容。
+        if (_annotationVersion != _session.AnnotationVersion)
+        {
+            using var annotations = _annotations.RenderOpen();
+            _session.DrawAnnotations(annotations, includeDraft: false);
+            _annotationVersion = _session.AnnotationVersion;
+        }
+        if (!_clipReady || _renderedSelection != _session.Selection)
+        {
+            var clip = new RectangleGeometry(_session.Selection ?? Rect.Empty);
+            clip.Freeze();
+            _annotations.Clip = clip;
+            _renderedSelection = _session.Selection;
+            _clipReady = true;
+        }
+        using (var drawing = _interaction.RenderOpen())
+            DrawInteraction(drawing, highlight);
+        _session.RefreshSelectionInfo();
+    }
+
+    private void DrawInteraction(DrawingContext drawing, Rect? highlight)
+    {
         if (highlight is { IsEmpty: false } rect)
         {
-            drawing.DrawRectangle(dim, null, new Rect(0, 0, desktop.Width, rect.Top));
-            drawing.DrawRectangle(dim, null, new Rect(0, rect.Bottom, desktop.Width, Math.Max(0, desktop.Height - rect.Bottom)));
-            drawing.DrawRectangle(dim, null, new Rect(0, rect.Top, rect.Left, rect.Height));
-            drawing.DrawRectangle(dim, null, new Rect(rect.Right, rect.Top, Math.Max(0, desktop.Width - rect.Right), rect.Height));
-            if (_session.Selection is not null)
+            if (_session.Selection is not null && _session.Draft is { } draft)
             {
-                drawing.PushClip(new RectangleGeometry(rect));
-                _session.DrawAnnotations(drawing, includeDraft: true);
+                drawing.PushClip(_annotations.Clip);
+                ScreenshotOverlayWindow.DrawAnnotation(drawing, draft);
                 drawing.Pop();
             }
-            var border = new System.Windows.Media.Pen(new SolidColorBrush(Color.FromRgb(83, 182, 255)), 2 * dpi.DpiScaleX);
-            drawing.DrawRectangle(null, border, rect);
+            drawing.DrawRectangle(null, _border, rect);
             if (_session.Selection is not null && _session.Tool == ScreenshotTool.Adjust)
             {
-                double radius = 3 * dpi.DpiScaleX;
-                foreach (var point in new[] { rect.TopLeft, rect.TopRight, rect.BottomLeft, rect.BottomRight,
-                    new Point(rect.Left + rect.Width / 2, rect.Top), new Point(rect.Left + rect.Width / 2, rect.Bottom),
-                    new Point(rect.Left, rect.Top + rect.Height / 2), new Point(rect.Right, rect.Top + rect.Height / 2) })
-                    drawing.DrawRectangle(Brushes.White, border, new Rect(point.X - radius, point.Y - radius, radius * 2, radius * 2));
+                double radius = SelectionHandleRadius * _dpi.DpiScaleX;
+                DrawHandle(drawing, rect.TopLeft, radius);
+                DrawHandle(drawing, rect.TopRight, radius);
+                DrawHandle(drawing, rect.BottomLeft, radius);
+                DrawHandle(drawing, rect.BottomRight, radius);
+                DrawHandle(drawing, new Point(rect.Left + rect.Width / 2, rect.Top), radius);
+                DrawHandle(drawing, new Point(rect.Left + rect.Width / 2, rect.Bottom), radius);
+                DrawHandle(drawing, new Point(rect.Left, rect.Top + rect.Height / 2), radius);
+                DrawHandle(drawing, new Point(rect.Right, rect.Top + rect.Height / 2), radius);
             }
         }
-        else
-            drawing.DrawRectangle(dim, null, desktop);
-        drawing.Pop();
     }
+
+    private void DrawHandle(DrawingContext drawing, Point point, double radius)
+        => drawing.DrawRectangle(Brushes.White, _border, new Rect(point.X - radius, point.Y - radius, radius * 2, radius * 2));
 
     private Point ScreenPoint(MouseEventArgs e)
     {
@@ -484,16 +614,22 @@ internal sealed class ScreenshotSurface : FrameworkElement
                 {
                     LeftEdge or RightEdge => Cursors.SizeWE,
                     TopEdge or BottomEdge => Cursors.SizeNS,
-                    3 or 12 => Cursors.SizeNWSE,
-                    6 or 9 => Cursors.SizeNESW,
+                    TopLeftCorner or BottomRightCorner => Cursors.SizeNWSE,
+                    TopRightCorner or BottomLeftCorner => Cursors.SizeNESW,
                     _ => selection.Contains(point) ? Cursors.SizeAll : Cursors.Cross
                 };
             }
             return;
         }
+        UpdateGesture(point);
+        RequestRender();
+    }
+
+    private void UpdateGesture(Point point)
+    {
         if (_selecting)
         {
-            if ((_start - point).Length >= 3)
+            if ((_start - point).Length >= SelectionDragThreshold)
                 _session.Selection = _session.PixelRect(new Rect(_start, point));
         }
         else if (_originalSelection is { } original)
@@ -526,7 +662,6 @@ internal sealed class ScreenshotSurface : FrameworkElement
             else if ((draft.Points[^1] - point).Length >= 1)
                 draft.Points.Add(point);
         }
-        _session.Refresh();
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
@@ -534,6 +669,8 @@ internal sealed class ScreenshotSurface : FrameworkElement
         base.OnMouseLeftButtonUp(e);
         if (!IsMouseCaptured)
             return;
+        // 帧合并不能丢失松手位置；提交和导出始终使用最后一个输入坐标。
+        UpdateGesture(ScreenPoint(e));
         if (_selecting)
         {
             var selected = _session.Selection ?? _session.Hover;
@@ -592,13 +729,13 @@ internal sealed class ScreenshotSurface : FrameworkElement
         if (_session.Hover != hover)
         {
             _session.Hover = hover;
-            _session.Refresh();
+            RequestRender();
         }
     }
 
     private int EdgesAt(Point point, Rect rect)
     {
-        double tolerance = 8 * VisualTreeHelper.GetDpi(this).DpiScaleX;
+        double tolerance = SelectionEdgeTolerance * VisualTreeHelper.GetDpi(this).DpiScaleX;
         Rect expanded = rect;
         expanded.Inflate(tolerance, tolerance);
         if (!expanded.Contains(point)) return 0;

@@ -22,14 +22,21 @@ public partial class ScreenshotToolbarWindow : Window
     private readonly ScreenshotOverlayWindow _session;
     private readonly List<ToggleButton> _colors = [];
     private readonly Rect _workArea;
+    private readonly string _captureColorInfo;
     private bool _busy;
     private bool _closed;
     private bool _statusIsError;
+    private bool? _selectionAvailable;
+    private bool? _statusBusy;
+    private Size? _statusSelectionSize;
+    private string? _statusError;
     private string? _error;
 
     internal ScreenshotToolbarWindow(ScreenshotOverlayWindow session)
     {
         _session = session;
+        _captureColorInfo = session.Capture.Hdr ? "HDR → sRGB" : "sRGB";
+        if (session.Capture.ProtectedContent) _captureColorInfo += " · 受保护内容已被系统遮挡";
         InitializeComponent();
         NativeMethods.GetCursorPos(out var cursor);
         _workArea = session.Capture.Monitors.FirstOrDefault(monitor => monitor.Bounds.Contains(new Point(cursor.X, cursor.Y)))
@@ -98,25 +105,54 @@ public partial class ScreenshotToolbarWindow : Window
         RectangleTool.IsChecked = _session.Tool == ScreenshotTool.Rectangle;
         PenTool.IsChecked = _session.Tool == ScreenshotTool.Pen;
         ToolsRow.IsEnabled = !_busy;
-        AdjustTool.IsEnabled = RectangleTool.IsEnabled = PenTool.IsEnabled = selected && !_busy;
         UndoButton.IsEnabled = _session.CanUndo && !_busy;
         RedoButton.IsEnabled = _session.CanRedo && !_busy;
-        CopyButton.IsEnabled = SaveButton.IsEnabled = _session.CanExport && !_busy;
         AnnotationOptions.IsEnabled = !_busy;
-        AnnotationOptions.Visibility = selected && (_session.Tool is ScreenshotTool.Rectangle or ScreenshotTool.Pen)
-            ? Visibility.Visible : Visibility.Collapsed;
-        // 拖动选区会频繁刷新；选中色环由主题样式处理，避免在此重复分配画刷。
+        RefreshSelectionControls(selected);
+        // 工具与颜色只在状态边界同步，拖动选区走轻量刷新。
         foreach (var button in _colors)
             button.IsChecked = Equals(button.Tag, _session.InkColor);
-        string colorInfo = _session.Capture.Hdr ? "HDR → sRGB" : "sRGB";
-        if (_session.Capture.ProtectedContent) colorInfo += " · 受保护内容已被系统遮挡";
-        string hint = _session.Selection is { IsEmpty: false } rect
-            ? $"{rect.Width:0} × {rect.Height:0} px · {colorInfo} · 拖动边框调整选区，选择矩形或画笔标注；Tab 隐藏工具栏，Esc 取消"
-            : $"{colorInfo} · 点击吸附窗口，或拖动框选；Tab 隐藏工具栏，Esc 取消";
-        StatusText.Text = _error ?? (_busy ? "正在导出截图…" : hint);
-        // 常规提示按需展开，但导出进度和错误必须始终可见。
-        StatusText.Visibility = _error is not null || _busy || InfoToggle.IsChecked == true
+        RefreshStatus();
+    }
+
+    internal void RefreshSelection()
+    {
+        if (_closed) return;
+        bool selected = _session.Selection is { IsEmpty: false };
+        if (_selectionAvailable != selected)
+            RefreshSelectionControls(selected);
+        RefreshStatus();
+    }
+
+    private void RefreshSelectionControls(bool selected)
+    {
+        _selectionAvailable = selected;
+        AdjustTool.IsEnabled = RectangleTool.IsEnabled = PenTool.IsEnabled = selected && !_busy;
+        // 导出还依赖鼠标捕获状态，按下、抬起与取消手势时必须执行完整刷新。
+        CopyButton.IsEnabled = SaveButton.IsEnabled = _session.CanExport && !_busy;
+        AnnotationOptions.Visibility = selected && (_session.Tool is ScreenshotTool.Rectangle or ScreenshotTool.Pen)
             ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private void RefreshStatus()
+    {
+        Size? selectionSize = _session.Selection is { IsEmpty: false } rect ? rect.Size : null;
+        // 提示不包含选区位置；平移或画笔移动时跳过格式化，避免重复布局和辅助功能通知。
+        if (_statusSelectionSize != selectionSize || _statusBusy != _busy || _statusError != _error)
+        {
+            _statusSelectionSize = selectionSize;
+            _statusBusy = _busy;
+            _statusError = _error;
+            string text = _error ?? (_busy ? "正在导出截图…" : selectionSize is { } size
+                ? $"{size.Width:0} × {size.Height:0} px · {_captureColorInfo} · 拖动边框调整选区，选择矩形或画笔标注；Tab 隐藏工具栏，Esc 取消"
+                : $"{_captureColorInfo} · 点击吸附窗口，或拖动框选；Tab 隐藏工具栏，Esc 取消");
+            // 即使面板折叠也保持文本最新，信息按钮的 tooltip 绑定到此文本。
+            if (StatusText.Text != text) StatusText.Text = text;
+        }
+        // 常规提示按需展开，但导出进度和错误必须始终可见。
+        var visibility = _error is not null || _busy || InfoToggle.IsChecked == true
+            ? Visibility.Visible : Visibility.Collapsed;
+        if (StatusText.Visibility != visibility) StatusText.Visibility = visibility;
         bool isError = _error is not null;
         if (_statusIsError != isError)
         {

@@ -73,6 +73,10 @@ public partial class ClipboardViewModel : IDisposable
 
     private void CaptureClipboardText()
     {
+        // 剪贴板读取和历史写盘与截图共用 UI 线程，采集、框选及导出期间跳过，避免阻塞选框交互。
+        if ((Application.Current as App)?.Screenshots?.IsBusy == true)
+            return;
+
         try
         {
             if (!Clipboard.ContainsText())

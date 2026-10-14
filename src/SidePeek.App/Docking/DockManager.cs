@@ -245,15 +245,14 @@ public sealed class DockManager
 
     private void Poll(object? sender, EventArgs e)
     {
+        // 截图共用 UI 线程，暂停期间跳过显示器查询；恢复时会刷新布局及全屏状态。
+        if (_screenshotSuspended || _placementRefresh is not null)
+            return;
+
         // RDP reconnects can deliver display notifications before the topology settles.
         // Recheck infrequently, including while dialogs suspend hover handling.
-        if (_placementRefresh is not null)
-            return;
         if (_displayRefreshClock.Elapsed >= DisplayRefreshInterval)
             RefreshPlacement();
-
-        if (_screenshotSuspended)
-            return;
 
         RefreshFullscreenVisibility();
         if (_suspended || _fullscreenHidden)
