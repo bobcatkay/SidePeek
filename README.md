@@ -1,6 +1,6 @@
 # SidePeek
 
-使用 .NET 9 + WPF 实现的 Windows 11 屏幕边缘侧边栏。main 分支已恢复 .NET 入口，解决方案为 `SidePeek.slnx`，项目为 `src/SidePeek.App/SidePeek.App.csproj`。
+使用 .NET 9 + WPF 实现的 Windows 11 屏幕边缘侧边栏，集成便签、命令、工具、剪贴板与截图功能。
 
 - 便签：编辑、自动保存、颜色、置顶、拖动排序、完成历史与恢复。
 - 命令：多行执行、参数与候选值、静默执行、实时输出、进程树中断。
@@ -17,17 +17,22 @@
 
 HDR 屏幕通过 DirectX Desktop Duplication 采集 FP16 scRGB 画面，结合该屏幕的 Windows SDR 白电平进行高光压缩，输出 sRGB PNG/剪贴板图像。HDR/SDR 混合显示器分别处理；导出的 PNG 为 SDR 图像，未保留 HDR 原始动态范围。工具栏、遮罩与选区边框不进入导出图片。
 
-## 自动发布
+## 下载与更新
 
-日常只需将修改提交并 push 到 `main`。GitHub Actions 会自动递增补丁版本（例如 `0.3.16 → 0.3.17`），把项目版本和 `CHANGELOG.md` 提交回 main，创建 `v版本号` 标签，编译 Windows x64 普通版、自包含版，并发布包含中文更新说明和 SHA-256 校验文件的 Release。
+从 [GitHub Releases](https://github.com/bobcatkay/SidePeek/releases/latest) 下载发布包，解压后运行 `SidePeek.exe`。更新时退出程序，再解压新版使用；用户数据保存在 `%AppData%\SidePeek`。
 
-下载见 [最新版本](https://github.com/bobcatkay/SidePeek/releases/latest)，进度见 [发布流水线](https://github.com/bobcatkay/SidePeek/actions/workflows/release.yml)。更新说明取自上次成功发布以来的提交标题和正文，请按“中文简短总结 + `1.`、`2.` 明细”填写 commit message。
+自动发布提供以下文件：
 
-流水线会产生一个远端版本提交，下一次开发前先执行 `git pull --rebase origin main` 同步。失败后可在 Actions 中重跑同一次运行，复用原来的版本和 tag。连续 push 会合并尚未开始的发布任务，并以最新 main 为准；正在执行的发布不会被取消。详细规则见 [自动发布说明](docs/RELEASING.md)。
+- 普通版 ZIP：需要 .NET 9 Desktop Runtime（Windows x64）。
+- 自包含版 ZIP：文件名带 `selfcontained`，包含运行时。
+- `SHA256SUMS.txt`：发布包的 SHA-256 校验值。
+- `release-notes.md`：本次更新说明，Release 页面也可查看。
+
+构建进度可在 [GitHub Actions](https://github.com/bobcatkay/SidePeek/actions/workflows/release.yml) 查看，流程说明见 [自动发布文档](docs/RELEASING.md)。
 
 ## 开发与打包
 
-安装 .NET 9 SDK；使用 Visual Studio 时安装“.NET 桌面开发”工作负载。
+安装 .NET 9 SDK；使用 Visual Studio 时安装“.NET 桌面开发”工作负载并打开 `SidePeek.slnx`。应用项目位于 `src/SidePeek.App/SidePeek.App.csproj`。
 
 ```powershell
 dotnet run --project src/SidePeek.App/SidePeek.App.csproj
@@ -37,10 +42,8 @@ dotnet run --project src/SidePeek.App/SidePeek.App.csproj
 .\build-release.ps1
 ```
 
-默认发布需要目标电脑安装 .NET 9 Desktop Runtime；`-SelfContained` 包含运行时。发布目录为 `dist/win-x64/`，ZIP 位于 `dist/`。普通构建不修改版本；`build-release.ps1` 仅用于手动递增 `.csproj` 版本并本地打包，失败时回滚。日常自动发版无需调用它，直接提交并 push 即可。
+默认发布需要目标电脑安装 .NET 9 Desktop Runtime；`-SelfContained` 包含运行时。发布目录为 `dist/win-x64/`，ZIP 位于 `dist/`。普通构建不修改版本；`build-release.ps1` 用于手动递增 `.csproj` 版本并本地打包，失败时回滚。
 
 两个脚本默认沿用当前网络配置；`-NuGetProxy <URL>` 指定本次发布的代理，`-NuGetProxy ''` 清除本次发布的代理环境变量，结束后恢复原环境。
 
-数据继续保存在 `%AppData%\SidePeek`。旧 Rust/GPUI 源码与 Cargo 入口已从当前工作树移除，历史仍在 Git 中；现有 WPF 多屏/DPI 定位修复保留。
-
-按 [AGENTS.md](AGENTS.md) 的项目约定，本次修改仅阅读代码和核对差异，未执行编译、构建、测试、Lint、静态检查或 CI。更多说明见 [开发环境](docs/SETUP.md)、[架构](docs/ARCHITECTURE.md) 和 [截图使用](docs/SCREENSHOTS.md)。
+更多说明见 [开发环境](docs/SETUP.md)、[架构](docs/ARCHITECTURE.md)、[截图使用](docs/SCREENSHOTS.md) 和 [项目规则](AGENTS.md)。

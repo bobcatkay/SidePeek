@@ -121,10 +121,12 @@ function New-ReleaseNotes {
         if ($body -match "(?m)^${RunTrailer}: \d+$") { continue }
         $messageLines = $body.Trim() -split '\r?\n'
         $shortHash = $commit.Substring(0, $CommitAbbreviationLength)
-        $lines.Add("- $($messageLines[0]) ([$shortHash]($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/commit/$commit))")
+        # 提交标题使用独立小标题，避免 GitHub 把嵌套的正文编号渲染为罗马数字。
+        $lines.Add("#### $($messageLines[0]) ([$shortHash]($env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY/commit/$commit))")
+        $lines.Add('')
         foreach ($line in ($messageLines | Select-Object -Skip 1)) {
             if ($line -match '^(Co-authored-by|Signed-off-by):' -or [string]::IsNullOrWhiteSpace($line)) { continue }
-            $lines.Add("  $line")
+            $lines.Add($line)
         }
         $lines.Add('')
     }

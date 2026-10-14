@@ -13,7 +13,7 @@ dotnet run --project src/SidePeek.App/SidePeek.App.csproj
 
 ## 发布
 
-日常发布只需提交并 push 到 main，GitHub Actions 自动完成版本递增、tag、编译、打包和 Release，见 [自动发布说明](RELEASING.md)。流水线会回写版本提交，开始下一次开发前执行 `git pull --rebase origin main`。以下脚本保留用于本地打包；自动发布无需提前运行 `build-release.ps1`。
+main 的 GitHub Actions 工作流自动完成版本递增、tag、编译、打包和 Release，见 [自动发布说明](RELEASING.md)。提交与版本管理约定见 [项目规则](../AGENTS.md)。以下脚本用于本地打包。
 
 ```powershell
 .\build.ps1
@@ -34,4 +34,4 @@ dotnet run --project src/SidePeek.App/SidePeek.App.csproj
 
 截图默认 `Ctrl+Alt+A`，侧边栏默认 `Ctrl+Alt+S`。HDR 自动映射为 sRGB；PNG 和剪贴板输出均为 SDR。受系统保护的画面可能被系统遮挡；DirectX 采集失败会显示原因并恢复侧边栏。
 
-按 AGENTS.md，除非用户明确要求，不执行编译、构建、测试、Lint、静态检查或主动触发 CI。此次功能的硬件运行验收尚未执行，具体操作见 [SCREENSHOTS.md](SCREENSHOTS.md)。
+截图操作与运行验收场景见 [SCREENSHOTS.md](SCREENSHOTS.md)。
