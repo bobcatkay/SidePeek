@@ -1,64 +1,147 @@
 <Window x:Class="SidePeek.App.Views.ScreenshotToolbarWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="SidePeek 截图工具栏" WindowStyle="None" ResizeMode="NoResize"
         ShowInTaskbar="False" Topmost="True" AllowsTransparency="True"
         Background="Transparent" SizeToContent="WidthAndHeight"
-        WindowStartupLocation="Manual" FontFamily="Microsoft YaHei UI"
-        FontSize="13" TextElement.Foreground="#F3F5F8">
+        WindowStartupLocation="Manual" FontFamily="{DynamicResource AppFontFamily}"
+        UseLayoutRounding="True" SnapsToDevicePixels="True"
+        TextElement.Foreground="{DynamicResource TextFillColorPrimaryBrush}">
     <Window.Resources>
-        <Style TargetType="Button">
-            <Setter Property="Foreground" Value="#F3F5F8" />
-            <Setter Property="Background" Value="#353D4B" />
-            <Setter Property="BorderBrush" Value="#59677B" />
-            <Setter Property="Margin" Value="3" />
-            <Setter Property="Padding" Value="10,7" />
+        <sys:Double x:Key="ToolbarButtonSize">32</sys:Double>
+        <sys:Double x:Key="ToolbarIconSize">18</sys:Double>
+        <sys:Double x:Key="ToolbarIndicatorWidth">14</sys:Double>
+        <sys:Double x:Key="ToolbarSeparatorHeight">20</sys:Double>
+        <sys:Double x:Key="ToolbarDisabledOpacity">0.35</sys:Double>
+        <sys:Double x:Key="ToolbarStatusFontSize">12</sys:Double>
+        <sys:Double x:Key="ToolbarSwatchSize">26</sys:Double>
+        <sys:Double x:Key="ToolbarWidthPickerWidth">78</sys:Double>
+        <CornerRadius x:Key="ToolbarCornerRadius">8</CornerRadius>
+        <CornerRadius x:Key="ToolbarButtonCornerRadius">5</CornerRadius>
+        <CornerRadius x:Key="ToolbarSwatchCornerRadius">13</CornerRadius>
+        <Thickness x:Key="ToolbarPadding">8</Thickness>
+        <Thickness x:Key="ToolbarSeparatorMargin">6,0</Thickness>
+        <Thickness x:Key="ToolbarIndicatorMargin">0,0,0,2</Thickness>
+        <Thickness x:Key="ToolbarDetailMargin">0,8,0,0</Thickness>
+        <Thickness x:Key="ToolbarSwatchInset">3</Thickness>
+        <Thickness x:Key="ToolbarWidthLabelMargin">12,0,6,0</Thickness>
+
+        <Style x:Key="ToolbarControl" TargetType="Control">
+            <Setter Property="Width" Value="{StaticResource ToolbarButtonSize}" />
+            <Setter Property="Height" Value="{StaticResource ToolbarButtonSize}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
             <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style TargetType="ui:SymbolIcon">
+            <Setter Property="FontSize" Value="{StaticResource ToolbarIconSize}" />
+            <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}" />
+        </Style>
+        <Style x:Key="ToolbarButton" TargetType="Button" BasedOn="{StaticResource ToolbarControl}">
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
                         <Border x:Name="Body" Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
-                                CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                CornerRadius="{StaticResource ToolbarButtonCornerRadius}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Body" Property="BorderBrush" Value="#75C5FF" />
+                                <Setter TargetName="Body" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Body" Property="Background" Value="{DynamicResource ControlFillColorTertiaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Body" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Body" Property="Opacity" Value="0.4" />
+                                <Setter TargetName="Body" Property="Opacity" Value="{StaticResource ToolbarDisabledOpacity}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
-        <Style TargetType="ToggleButton">
-            <Setter Property="Foreground" Value="#F3F5F8" />
-            <Setter Property="Background" Value="#353D4B" />
-            <Setter Property="BorderBrush" Value="#59677B" />
-            <Setter Property="Margin" Value="3" />
-            <Setter Property="Padding" Value="10,7" />
+        <Style x:Key="ToolbarToggle" TargetType="ToggleButton" BasedOn="{StaticResource ToolbarControl}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Grid>
+                            <Border x:Name="Body" Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                                    CornerRadius="{StaticResource ToolbarButtonCornerRadius}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <Border x:Name="Indicator" Visibility="Collapsed" IsHitTestVisible="False"
+                                    Background="{DynamicResource AccentFillColorDefaultBrush}"
+                                    Width="{StaticResource ToolbarIndicatorWidth}" Height="2" CornerRadius="1"
+                                    HorizontalAlignment="Center" VerticalAlignment="Bottom"
+                                    Margin="{StaticResource ToolbarIndicatorMargin}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Body" Property="Background" Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Body" Property="Background" Value="{DynamicResource ControlFillColorDefaultBrush}" />
+                                <Setter TargetName="Body" Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+                                <Setter TargetName="Indicator" Property="Visibility" Value="Visible" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Body" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="{StaticResource ToolbarDisabledOpacity}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ToolbarSeparator" TargetType="Border">
+            <Setter Property="Width" Value="1" />
+            <Setter Property="Height" Value="{StaticResource ToolbarSeparatorHeight}" />
+            <Setter Property="Margin" Value="{StaticResource ToolbarSeparatorMargin}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+        </Style>
+        <Style x:Key="ColorSwatch" TargetType="ToggleButton">
+            <Setter Property="Width" Value="{StaticResource ToolbarSwatchSize}" />
+            <Setter Property="Height" Value="{StaticResource ToolbarSwatchSize}" />
             <Setter Property="Cursor" Value="Hand" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Body" Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
-                                CornerRadius="6" Padding="{TemplateBinding Padding}">
-                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <Border x:Name="Ring" BorderBrush="Transparent" BorderThickness="2"
+                                Background="Transparent" CornerRadius="{StaticResource ToolbarSwatchCornerRadius}">
+                            <Border Background="{TemplateBinding Background}" BorderThickness="1"
+                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                    Margin="{StaticResource ToolbarSwatchInset}"
+                                    CornerRadius="{StaticResource ToolbarSwatchCornerRadius}" />
                         </Border>
                         <ControlTemplate.Triggers>
-                            <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Body" Property="Background" Value="#175985" />
-                                <Setter TargetName="Body" Property="BorderBrush" Value="#75C5FF" />
-                            </Trigger>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Body" Property="BorderBrush" Value="#75C5FF" />
+                                <Setter TargetName="Ring" Property="BorderBrush" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Ring" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Ring" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
-                                <Setter TargetName="Body" Property="Opacity" Value="0.4" />
+                                <Setter Property="Opacity" Value="{StaticResource ToolbarDisabledOpacity}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -66,30 +149,95 @@
             </Setter>
         </Style>
     </Window.Resources>
-    <Border Background="#F21D2430" BorderBrush="#59677B" BorderThickness="1"
-            CornerRadius="12" Padding="10">
+    <!-- 与设置页共用动态主题资源；标注颜色仅表示输出颜色，不参与界面配色。 -->
+    <Border Background="{DynamicResource ApplicationBackgroundBrush}"
+            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+            CornerRadius="{StaticResource ToolbarCornerRadius}" Padding="{StaticResource ToolbarPadding}">
         <StackPanel>
-            <WrapPanel x:Name="ToolsRow">
-                <ToggleButton x:Name="WindowTool" Content="窗口吸附 W" Tag="Window" Click="OnTool"
-                              ToolTip="点击窗口吸附选区，也可拖动框选；重新选择会清除标注" />
-                <ToggleButton x:Name="AreaTool" Content="矩形框选 A" Tag="Area" Click="OnTool"
-                              ToolTip="拖动框选任意区域；重新选择会清除标注" />
-                <ToggleButton x:Name="AdjustTool" Content="调整选区 V" Tag="Adjust" Click="OnTool" />
-                <ToggleButton x:Name="RectangleTool" Content="矩形标注 R" Tag="Rectangle" Click="OnTool" />
-                <ToggleButton x:Name="PenTool" Content="画笔 P" Tag="Pen" Click="OnTool" />
-                <Button x:Name="UndoButton" Content="撤销" Click="OnUndo" ToolTip="Ctrl+Z" />
-                <Button x:Name="RedoButton" Content="重做" Click="OnRedo" ToolTip="Ctrl+Shift+Z / Ctrl+Y" />
+            <WrapPanel x:Name="ToolbarRow">
+                <StackPanel x:Name="ToolsRow" Orientation="Horizontal">
+                    <ToggleButton x:Name="WindowTool" Style="{StaticResource ToolbarToggle}" Tag="Window" Click="OnTool"
+                                  AutomationProperties.Name="窗口吸附" ToolTip="窗口吸附 (W)：点击窗口或拖动框选；重新选择会清除标注">
+                        <ui:SymbolIcon Symbol="Window24" />
+                    </ToggleButton>
+                    <ToggleButton x:Name="AreaTool" Style="{StaticResource ToolbarToggle}" Tag="Area" Click="OnTool"
+                                  AutomationProperties.Name="矩形框选" ToolTip="矩形框选 (A)：拖动选择任意区域；重新选择会清除标注">
+                        <ui:SymbolIcon Symbol="SelectObject24" />
+                    </ToggleButton>
+                    <ToggleButton x:Name="AdjustTool" Style="{StaticResource ToolbarToggle}" Tag="Adjust" Click="OnTool"
+                                  AutomationProperties.Name="调整选区" ToolTip="调整选区 (V)：移动选区或拖动边框调整大小">
+                        <ui:SymbolIcon Symbol="Crop24" />
+                    </ToggleButton>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource ToolbarSeparator}" />
+                    <ToggleButton x:Name="RectangleTool" Style="{StaticResource ToolbarToggle}" Tag="Rectangle" Click="OnTool"
+                                  AutomationProperties.Name="矩形标注" ToolTip="矩形标注 (R)">
+                        <ui:SymbolIcon Symbol="RectangleLandscape24" />
+                    </ToggleButton>
+                    <ToggleButton x:Name="PenTool" Style="{StaticResource ToolbarToggle}" Tag="Pen" Click="OnTool"
+                                  AutomationProperties.Name="画笔" ToolTip="画笔 (P)">
+                        <ui:SymbolIcon Symbol="Pen24" />
+                    </ToggleButton>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource ToolbarSeparator}" />
+                    <Button x:Name="UndoButton" Style="{StaticResource ToolbarButton}" Click="OnUndo"
+                            AutomationProperties.Name="撤销" ToolTip="撤销 (Ctrl+Z)">
+                        <ui:SymbolIcon Symbol="ArrowUndo24" />
+                    </Button>
+                    <Button x:Name="RedoButton" Style="{StaticResource ToolbarButton}" Click="OnRedo"
+                            AutomationProperties.Name="重做" ToolTip="重做 (Ctrl+Shift+Z / Ctrl+Y)">
+                        <ui:SymbolIcon Symbol="ArrowRedo24" />
+                    </Button>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource ToolbarSeparator}" />
+                    <Button x:Name="SaveButton" Style="{StaticResource ToolbarButton}" Click="OnSave"
+                            AutomationProperties.Name="保存 PNG" ToolTip="保存 PNG (Ctrl+S)">
+                        <ui:SymbolIcon Symbol="Save24" />
+                    </Button>
+                    <Button x:Name="CopyButton" Style="{StaticResource ToolbarButton}" Click="OnCopy"
+                            Foreground="{DynamicResource AccentFillColorDefaultBrush}"
+                            AutomationProperties.Name="复制截图" ToolTip="复制截图 (Ctrl+C / Enter)">
+                        <ui:SymbolIcon Symbol="Copy24" />
+                    </Button>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource ToolbarSeparator}" />
+                    <ToggleButton x:Name="InfoToggle" Style="{StaticResource ToolbarToggle}" Click="OnInfo"
+                                  AutomationProperties.Name="截图信息与操作提示" ToolTip="{Binding Text, ElementName=StatusText}">
+                        <ui:SymbolIcon Symbol="Info24" />
+                    </ToggleButton>
+                    <Button Style="{StaticResource ToolbarButton}" Click="OnCancel"
+                            AutomationProperties.Name="取消截图" ToolTip="取消截图 (Esc)">
+                        <ui:SymbolIcon Symbol="Dismiss24" />
+                    </Button>
+                </StackPanel>
             </WrapPanel>
-            <WrapPanel>
-                <StackPanel x:Name="ColorPanel" Orientation="Horizontal" Margin="3,5,8,5" />
-                <TextBlock Text="粗细" VerticalAlignment="Center" Margin="3,0,6,0" />
-                <ComboBox x:Name="WidthPicker" Width="82" Margin="0,3,10,3"
-                          SelectionChanged="OnWidthChanged" ToolTip="标注在截图中的像素宽度" />
-                <Button x:Name="SaveButton" Content="保存 PNG" Click="OnSave" ToolTip="Ctrl+S" />
-                <Button x:Name="CopyButton" Content="复制" Background="#175985" Click="OnCopy" ToolTip="Ctrl+C / Enter" />
-                <Button Content="取消 Esc" Click="OnCancel" />
+            <!-- 使用同一窗口内的按需面板，避免浮层遮挡框选或改变截图窗口生命周期。 -->
+            <WrapPanel x:Name="AnnotationOptions" Visibility="Collapsed"
+                       Margin="{StaticResource ToolbarDetailMargin}"
+                       MaxWidth="{Binding ActualWidth, ElementName=ToolbarRow}">
+                <WrapPanel x:Name="ColorPanel" VerticalAlignment="Center"
+                           MaxWidth="{Binding ActualWidth, ElementName=ToolbarRow}" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="粗细" VerticalAlignment="Center" Margin="{StaticResource ToolbarWidthLabelMargin}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <ComboBox x:Name="WidthPicker" Width="{StaticResource ToolbarWidthPickerWidth}"
+                              VerticalAlignment="Center" SelectionChanged="OnWidthChanged"
+                              Background="{DynamicResource ControlFillColorDefaultBrush}"
+                              Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                              BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                              AutomationProperties.Name="标注粗细" ToolTip="标注在截图中的像素宽度" />
+                </StackPanel>
             </WrapPanel>
-            <TextBlock x:Name="StatusText" Margin="4,5,4,0" TextWrapping="Wrap" Foreground="#B8C8DA" />
+            <TextBlock x:Name="StatusText" Visibility="Collapsed" TextWrapping="Wrap"
+                       Margin="{StaticResource ToolbarDetailMargin}"
+                       MaxWidth="{Binding ActualWidth, ElementName=ToolbarRow}"
+                       FontSize="{StaticResource ToolbarStatusFontSize}"
+                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                       AutomationProperties.LiveSetting="Polite" />
         </StackPanel>
     </Border>
 </Window>

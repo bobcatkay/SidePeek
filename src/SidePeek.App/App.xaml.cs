@@ -28,6 +28,8 @@ public partial class App : Application
 
         SettingsService.Initialize();
         ThemeService.Apply(SettingsService.Current.Theme);
+        FontService.Apply(SettingsService.Current.FontFamilyName);
+        SettingsService.Changed += OnSettingsChanged;
         AppLogger.Info("SidePeek started.");
         DispatcherUnhandledException += OnUnhandledException;
 
@@ -40,11 +42,15 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        SettingsService.Changed -= OnSettingsChanged;
         Screenshots?.Dispose();
         _tray?.Dispose();
         _singleInstance?.Dispose();
         base.OnExit(e);
     }
+
+    private void OnSettingsChanged(object? sender, EventArgs e)
+        => FontService.Apply(SettingsService.Current.FontFamilyName);
 
     private void OnUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {

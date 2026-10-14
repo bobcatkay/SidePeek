@@ -1,0 +1,69 @@
+name: 自动构建并发布 SidePeek
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# 正在发布的版本不取消；连续 push 的待处理任务合并后读取最新 main。
+concurrency:
+  group: sidepeek-release-main
+  cancel-in-progress: false
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_NOLOGO: '1'
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: 获取完整历史和标签
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 更新版本、更新日志并推送标签
+        id: release
+        run: ./.github/scripts/release.ps1 -Phase Prepare
+
+      - name: 安装 .NET 9 SDK
+        if: steps.release.outputs.publish == 'true'
+        id: dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
+        with:
+          dotnet-version: '9.0.x'
+
+      - name: 固定本次构建使用的 SDK
+        if: steps.release.outputs.publish == 'true'
+        env:
+          RELEASE_DOTNET_VERSION: ${{ steps.dotnet.outputs.dotnet-version }}
+        run: |
+          # 托管 runner 可能预装更高版本 SDK；只在 runner 上生成选择文件。
+          @{ sdk = @{ version = $env:RELEASE_DOTNET_VERSION; rollForward = 'disable' } } |
+            ConvertTo-Json | Set-Content -LiteralPath global.json -Encoding utf8
+
+      - name: 编译并打包普通版
+        if: steps.release.outputs.publish == 'true'
+        run: ./build.ps1
+
+      - name: 编译并打包自包含版
+        if: steps.release.outputs.publish == 'true'
+        run: ./build.ps1 -SelfContained
+
+      # GITHUB_TOKEN 推送 tag 不会触发另一条工作流，发布必须在这里继续执行。
+      - name: 上传完整安装包、校验文件和更新说明
+        if: steps.release.outputs.publish == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: ./.github/scripts/release.ps1 -Phase Publish

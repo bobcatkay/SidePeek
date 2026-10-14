@@ -7,6 +7,7 @@
         WindowStyle="None"
         ResizeMode="NoResize"
         ShowInTaskbar="False"
+        ShowActivated="False"
         Topmost="True"
         AllowsTransparency="False"
         Background="Transparent"
@@ -23,7 +24,7 @@
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Grayscale"
         TextOptions.TextHintingMode="Animated"
-        FontFamily="Segoe UI Variable Text, Segoe UI"
+        FontFamily="{DynamicResource AppFontFamily}"
         Loaded="OnLoaded">
 
     <Window.Resources>

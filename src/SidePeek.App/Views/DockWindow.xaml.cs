@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -16,10 +17,17 @@ public partial class DockWindow : Window, IDockViewport
 {
     private const int HotkeyId = 0xB001;
     private const int AcrylicAccentFlags = 2;
+    private const int FullClientGlassMargin = -1;
+    private static readonly Color LightAcrylicTint = Color.FromArgb(0xB8, 0xF8, 0xFA, 0xFC);
+    private static readonly Color DarkAcrylicTint = Color.FromArgb(0xCC, 0x18, 0x1B, 0x20);
 
     private DockManager? _dock;
     private IntPtr _hwnd;
     private readonly TranslateTransform _dockViewportTransform = new();
+    private readonly HashSet<int> _failedDwmAttributes = new();
+    private Size _dockViewportSize;
+    private Size? _collapsedRegionSize;
+    private bool _isCollapsedPresentation;
 
     private NotesView? _notesView;
     private CommandsView? _commandsView;
@@ -29,6 +37,9 @@ public partial class DockWindow : Window, IDockViewport
     private bool _hotkeyRegistered;
     private string? _registeredHotkeySignature;
     private bool _startupShown;
+    private bool _frameExtensionFailureLogged;
+    private bool _accentFailureLogged;
+    private bool _regionFailureLogged;
 
     public DockWindow()
     {
@@ -53,11 +64,13 @@ public partial class DockWindow : Window, IDockViewport
         ClearSelectedTab();
         ContentHost.Content = _settingsView ??= new SettingsView();
         _dock?.Reveal();
-        Activate();
+        if (IsVisible)
+            Activate();
     }
 
     public void SetDockViewport(Rect expandedRect, Rect viewportRect)
     {
+        _dockViewportSize = viewportRect.Size;
         BackdropTintLayer.Width = Math.Max(1, expandedRect.Width);
         BackdropTintLayer.Height = Math.Max(1, expandedRect.Height);
         BackdropTintLayer.HorizontalAlignment = HorizontalAlignment.Left;
@@ -68,11 +81,86 @@ public partial class DockWindow : Window, IDockViewport
         _dockViewportTransform.Y = expandedRect.Top - viewportRect.Top;
     }
 
+    public void SetCollapsedPresentation(bool isCollapsed)
+    {
+        bool changed = _isCollapsedPresentation != isCollapsed;
+        _isCollapsedPresentation = isCollapsed;
+
+        if (!isCollapsed)
+            ClearCollapsedRegion();
+
+        if (changed)
+        {
+            ApplyWindowBackdrop();
+            AppLogger.Info($"[DockWindow] Dock presentation changed: collapsed={isCollapsed}.");
+        }
+
+        // 无动画定位也会走这里，确保收起时切换显示器、DPI 或停靠方向能更新区域。
+        if (isCollapsed)
+            ApplyCollapsedRegion();
+    }
+
+    private void ApplyCollapsedRegion()
+    {
+        if (_hwnd == IntPtr.Zero)
+            return;
+
+        Matrix transform = HwndSource.FromHwnd(_hwnd)?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
+        Vector pixels = transform.Transform(new Vector(_dockViewportSize.Width, _dockViewportSize.Height));
+        int width = Math.Max(1, (int)Math.Round(pixels.X));
+        int height = Math.Max(1, (int)Math.Round(pixels.Y));
+        var pixelSize = new Size(width, height);
+        if (_collapsedRegionSize == pixelSize)
+            return;
+
+        // 原生区域以物理像素限制整个 HWND，WPF 的 Clip 只能限制内容，不能裁掉系统背景。
+        int diameter = Math.Min(width, height);
+        IntPtr region = NativeMethods.CreateRoundRectRgn(0, 0, width, height, diameter, diameter);
+        if (region == IntPtr.Zero)
+        {
+            LogRegionFailure("create");
+            return;
+        }
+
+        if (NativeMethods.SetWindowRgn(_hwnd, region, true) == 0)
+        {
+            NativeMethods.DeleteObject(region);
+            LogRegionFailure("apply");
+            return;
+        }
+
+        // SetWindowRgn 成功后区域归系统所有，只能在失败时自行释放。
+        _collapsedRegionSize = pixelSize;
+    }
+
+    private void ClearCollapsedRegion()
+    {
+        if (_hwnd == IntPtr.Zero || _collapsedRegionSize is null)
+            return;
+
+        if (NativeMethods.SetWindowRgn(_hwnd, IntPtr.Zero, true) == 0)
+        {
+            LogRegionFailure("clear");
+            return;
+        }
+
+        _collapsedRegionSize = null;
+    }
+
+    private void LogRegionFailure(string operation)
+    {
+        if (_regionFailureLogged)
+            return;
+
+        _regionFailureLogged = true;
+        AppLogger.Error($"[DockWindow] Unable to {operation} the collapsed window region.");
+    }
+
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
         _hwnd = new WindowInteropHelper(this).Handle;
-        ApplyAcrylicBackdrop();
+        ApplyWindowBackdrop();
         HwndSource.FromHwnd(_hwnd)?.AddHook(WndProc);
         RegisterHotkey();
         InitializeDocking();
@@ -178,7 +266,7 @@ public partial class DockWindow : Window, IDockViewport
         base.OnClosed(e);
     }
 
-    private void ApplyAcrylicBackdrop()
+    private void ApplyWindowBackdrop()
     {
         IntPtr hwnd = _hwnd != IntPtr.Zero
             ? _hwnd
@@ -189,33 +277,58 @@ public partial class DockWindow : Window, IDockViewport
 
         UpdateBackdropTint();
 
-        // 透明合成表面，让系统亚克力背景透上来形成毛玻璃。
-        // 注意：透明表面会让 WPF 文字退化为灰阶抗锯齿（略糊），这是毛玻璃的固有代价。
+        // 收起条不能继续使用全窗口玻璃：系统圆角、背景和阴影会超出窄条形成第二层胶囊。
+        // 关闭玻璃时使用不透明主题色，避免非 layered 窗口的透明合成表面变黑。
+        Color surfaceColor = Colors.Transparent;
+        if (_isCollapsedPresentation)
+        {
+            surfaceColor = GetAcrylicTintColor();
+            surfaceColor.A = byte.MaxValue;
+        }
+        Background = new SolidColorBrush(surfaceColor);
+        BackdropTintLayer.Visibility = _isCollapsedPresentation ? Visibility.Hidden : Visibility.Visible;
         HwndSource? source = HwndSource.FromHwnd(hwnd);
         if (source?.CompositionTarget != null)
-            source.CompositionTarget.BackgroundColor = Colors.Transparent;
+            source.CompositionTarget.BackgroundColor = surfaceColor;
 
-        var margins = new NativeMethods.MARGINS { Left = -1, Right = -1, Top = -1, Bottom = -1 };
-        NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref margins);
+        SetDwmAttribute(hwnd, NativeMethods.DWMWA_NCRENDERING_POLICY,
+            _isCollapsedPresentation ? NativeMethods.DWMNCRP_DISABLED : NativeMethods.DWMNCRP_USEWINDOWSTYLE);
 
-        int backdrop = NativeMethods.DWMSBT_TRANSIENTWINDOW;
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
+        int margin = _isCollapsedPresentation ? 0 : FullClientGlassMargin;
+        var margins = new NativeMethods.MARGINS { Left = margin, Right = margin, Top = margin, Bottom = margin };
+        int frameResult = NativeMethods.DwmExtendFrameIntoClientArea(hwnd, ref margins);
+        if (frameResult < 0 && !_frameExtensionFailureLogged)
+        {
+            _frameExtensionFailureLogged = true;
+            AppLogger.Error($"[DockWindow] Unable to update the glass frame. HRESULT: 0x{frameResult:X8}.");
+        }
 
-        // DWMWA_SYSTEMBACKDROP_TYPE 在部分 Windows 版本/窗口组合下会静默退化；
-        // legacy Acrylic 组合属性可作为更可靠的兜底。
-        EnableAcrylicBlurBehind(hwnd);
+        SetDwmAttribute(hwnd, NativeMethods.DWMWA_SYSTEMBACKDROP_TYPE,
+            _isCollapsedPresentation ? NativeMethods.DWMSBT_NONE : NativeMethods.DWMSBT_TRANSIENTWINDOW);
 
-        int corner = NativeMethods.DWMWCP_ROUND;
-        NativeMethods.DwmSetWindowAttribute(hwnd, NativeMethods.DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
+        // legacy Acrylic 是系统背景的兼容兜底；收起时两条路径必须一起禁用。
+        SetAcrylicBlurBehind(hwnd, enabled: !_isCollapsedPresentation);
+        SetDwmAttribute(hwnd, NativeMethods.DWMWA_WINDOW_CORNER_PREFERENCE,
+            _isCollapsedPresentation ? NativeMethods.DWMWCP_DONOTROUND : NativeMethods.DWMWCP_ROUND);
+
+        // 描边与毛玻璃背景独立，主题变化重设背景后也要保持无描边。
+        SetDwmAttribute(hwnd, NativeMethods.DWMWA_BORDER_COLOR, NativeMethods.DWMWA_COLOR_NONE);
     }
 
-    private void EnableAcrylicBlurBehind(IntPtr hwnd)
+    private void SetDwmAttribute(IntPtr hwnd, int attribute, int value)
+    {
+        int result = NativeMethods.DwmSetWindowAttribute(hwnd, attribute, ref value, sizeof(int));
+        if (result < 0 && _failedDwmAttributes.Add(attribute))
+            AppLogger.Error($"[DockWindow] Unable to set DWM attribute {attribute}; collapsed={_isCollapsedPresentation}, HRESULT: 0x{result:X8}.");
+    }
+
+    private void SetAcrylicBlurBehind(IntPtr hwnd, bool enabled)
     {
         var accent = new NativeMethods.ACCENT_POLICY
         {
-            AccentState = NativeMethods.ACCENT_ENABLE_ACRYLICBLURBEHIND,
-            AccentFlags = AcrylicAccentFlags,
-            GradientColor = GetAcrylicGradientColor()
+            AccentState = enabled ? NativeMethods.ACCENT_ENABLE_ACRYLICBLURBEHIND : NativeMethods.ACCENT_DISABLED,
+            AccentFlags = enabled ? AcrylicAccentFlags : 0,
+            GradientColor = enabled ? ToAbgr(GetAcrylicTintColor()) : 0
         };
 
         int accentSize = Marshal.SizeOf<NativeMethods.ACCENT_POLICY>();
@@ -231,7 +344,11 @@ public partial class DockWindow : Window, IDockViewport
                 SizeOfData = accentSize
             };
 
-            NativeMethods.SetWindowCompositionAttribute(hwnd, ref data);
+            if (!NativeMethods.SetWindowCompositionAttribute(hwnd, ref data) && !_accentFailureLogged)
+            {
+                _accentFailureLogged = true;
+                AppLogger.Error($"[DockWindow] Unable to update legacy acrylic: enabled={enabled}.");
+            }
         }
         catch (EntryPointNotFoundException)
         {
@@ -251,15 +368,9 @@ public partial class DockWindow : Window, IDockViewport
             : Color.FromArgb(0x52, 0x18, 0x1B, 0x20));
     }
 
-    private int GetAcrylicGradientColor()
-    {
-        bool isLightTheme = ThemeService.IsLightTheme(SettingsService.Current.Theme);
-        Color tint = isLightTheme
-            ? Color.FromArgb(0xB8, 0xF8, 0xFA, 0xFC)
-            : Color.FromArgb(0xCC, 0x18, 0x1B, 0x20);
-
-        return ToAbgr(tint);
-    }
+    private static Color GetAcrylicTintColor() => ThemeService.IsLightTheme(SettingsService.Current.Theme)
+        ? LightAcrylicTint
+        : DarkAcrylicTint;
 
     private static int ToAbgr(Color color)
     {
@@ -278,7 +389,7 @@ public partial class DockWindow : Window, IDockViewport
             ShowTab(TabNotes);
             _clipboardView ??= new ClipboardView();
             _startupShown = true;
-            ApplyAcrylicBackdrop();
+            ApplyWindowBackdrop();
             Opacity = 1;
         }
     }
@@ -330,7 +441,7 @@ public partial class DockWindow : Window, IDockViewport
     {
         AppSettings settings = SettingsService.Current;
         ThemeService.Apply(settings.Theme);
-        ApplyAcrylicBackdrop();
+        ApplyWindowBackdrop();
         RegisterHotkey();
 
         if (_dock is null)

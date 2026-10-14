@@ -98,7 +98,6 @@ internal sealed class ScreenshotService : IDisposable
             return;
         }
         IsBusy = true;
-        bool wasVisible = _owner.IsVisible;
         IntPtr foreground = ScreenshotNative.GetForegroundWindow();
         using var cancellation = new CancellationTokenSource();
         _captureCancellation = cancellation;
@@ -106,7 +105,6 @@ internal sealed class ScreenshotService : IDisposable
         try
         {
             _owner.SuspendDockForScreenshot();
-            _owner.Hide();
             await Task.Delay(120, cancellation.Token);
             await Task.Run(() => ScreenshotNative.DwmFlush(), cancellation.Token);
             var capture = await ScreenshotCapture.CaptureAsync(cancellation.Token);
@@ -131,15 +129,13 @@ internal sealed class ScreenshotService : IDisposable
             IsBusy = false;
             if (!_disposed)
             {
-                if (wasVisible)
-                {
-                    bool activated = _owner.ShowActivated;
-                    _owner.ShowActivated = false;
-                    _owner.Show();
-                    _owner.ShowActivated = activated;
-                }
+                // Restore the game before the dock decides whether fullscreen still requires hiding.
+                if (foreground != IntPtr.Zero && foreground != _hwnd)
+                    ScreenshotNative.SetForegroundWindow(foreground);
                 _owner.ResumeDockAfterScreenshot();
-                if (foreground != IntPtr.Zero) ScreenshotNative.SetForegroundWindow(foreground);
+                // A dock-owned capture cannot reactivate its HWND until it is visible again.
+                if (foreground == _hwnd && _owner.IsVisible)
+                    ScreenshotNative.SetForegroundWindow(foreground);
             }
         }
         if (failure is not null && !_disposed)

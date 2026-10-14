@@ -66,6 +66,16 @@ internal static class NativeMethods
         int height,
         uint flags);
 
+    [DllImport("user32.dll")]
+    public static extern int SetWindowRgn(IntPtr hwnd, IntPtr region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
+    [DllImport("gdi32.dll")]
+    public static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int ellipseWidth, int ellipseHeight);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DeleteObject(IntPtr handle);
+
     [StructLayout(LayoutKind.Sequential)]
     public struct MEMORYSTATUSEX
     {
@@ -96,11 +106,18 @@ internal static class NativeMethods
         public int Bottom;
     }
 
+    public const int DWMWA_NCRENDERING_POLICY = 2;
     public const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    public const int DWMWA_BORDER_COLOR = 34;
     public const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+    public const int DWMWA_COLOR_NONE = unchecked((int)0xFFFFFFFE);
+    public const int DWMNCRP_USEWINDOWSTYLE = 0;
+    public const int DWMNCRP_DISABLED = 1;
+    public const int DWMWCP_DONOTROUND = 1;
     public const int DWMWCP_ROUND = 2;
     public const int DWMSBT_NONE = 1;            // 不使用系统背景特效（不透明）
     public const int DWMSBT_TRANSIENTWINDOW = 3; // 经典亚克力（半透明毛玻璃）
+    public const int ACCENT_DISABLED = 0;
     public const int ACCENT_ENABLE_ACRYLICBLURBEHIND = 4;
     public const int WCA_ACCENT_POLICY = 19;
 

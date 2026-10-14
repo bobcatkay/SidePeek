@@ -23,10 +23,13 @@ public sealed class SettingsOption<T>
 
 public sealed class SettingsViewModel : ObservableObject
 {
+    private const string DefaultFontLabelResourceKey = "DefaultFontLabel";
+
     private bool _loading;
     private SettingsOption<string> _selectedDockDisplay = null!;
     private SettingsOption<DockEdge> _selectedDockEdge = null!;
     private SettingsOption<AppThemeMode> _selectedTheme = null!;
+    private SettingsOption<string> _selectedFontFamily = null!;
     private double _expandDelayMs;
     private double _collapseDelayMs;
     private double _noteHistoryMonths;
@@ -61,6 +64,8 @@ public sealed class SettingsViewModel : ObservableObject
             new SettingsOption<AppThemeMode>("跟随系统", AppThemeMode.System),
         };
 
+        FontFamilies = BuildFontFamilies();
+
         HotkeyKeys = Enumerable.Range('A', 26)
             .Select(value => ((char)value).ToString())
             .Concat(Enumerable.Range(1, 12).Select(value => $"F{value}"))
@@ -73,6 +78,7 @@ public sealed class SettingsViewModel : ObservableObject
     public IReadOnlyList<SettingsOption<string>> DockDisplays { get; }
     public IReadOnlyList<SettingsOption<DockEdge>> DockEdges { get; }
     public IReadOnlyList<SettingsOption<AppThemeMode>> Themes { get; }
+    public IReadOnlyList<SettingsOption<string>> FontFamilies { get; }
     public IReadOnlyList<string> HotkeyKeys { get; }
     public string VersionText { get; } = $"v{GetDisplayVersion()}";
     public static double ExpandDelayMinimumMs => SettingsService.MinExpandDelayMs;
@@ -112,6 +118,17 @@ public sealed class SettingsViewModel : ObservableObject
             if (value is null || !SetProperty(ref _selectedTheme, value) || _loading)
                 return;
             SettingsService.Update(settings => settings.Theme = value.Value);
+        }
+    }
+
+    public SettingsOption<string> SelectedFontFamily
+    {
+        get => _selectedFontFamily;
+        set
+        {
+            if (value is null || !SetProperty(ref _selectedFontFamily, value) || _loading)
+                return;
+            SettingsService.Update(settings => settings.FontFamilyName = value.Value);
         }
     }
 
@@ -268,6 +285,9 @@ public sealed class SettingsViewModel : ObservableObject
                 ?? DockDisplays[0];
             SelectedDockEdge = DockEdges.First(option => option.Value == settings.DockEdge);
             SelectedTheme = Themes.First(option => option.Value == settings.Theme);
+            SelectedFontFamily = FontFamilies.FirstOrDefault(option =>
+                    string.Equals(option.Value, settings.FontFamilyName, StringComparison.OrdinalIgnoreCase))
+                ?? FontFamilies[0];
             ExpandDelayMs = settings.ExpandDelayMs;
             CollapseDelayMs = settings.CollapseDelayMs;
             NoteHistoryMonths = settings.NoteHistoryMonths;
@@ -365,6 +385,18 @@ public sealed class SettingsViewModel : ObservableObject
                 string label = $"显示器 {index + 1}{primarySuffix} · {screen.Bounds.Width}x{screen.Bounds.Height}";
                 return new SettingsOption<string>(label, screen.DeviceName);
             })
+            .ToArray();
+    }
+
+    private static IReadOnlyList<SettingsOption<string>> BuildFontFamilies()
+    {
+        string defaultLabel = (string)System.Windows.Application.Current.FindResource(DefaultFontLabelResourceKey);
+
+        // Keep the persisted family identifier independent of Windows' localized display name.
+        return FontService.AvailableFamilies
+            .Select(family => new SettingsOption<string>(FontService.GetDisplayName(family), family.Source))
+            .OrderBy(option => option.Label, StringComparer.CurrentCultureIgnoreCase)
+            .Prepend(new SettingsOption<string>(defaultLabel, string.Empty))
             .ToArray();
     }
 

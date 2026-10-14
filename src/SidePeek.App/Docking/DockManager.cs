@@ -15,6 +15,7 @@ namespace SidePeek.App.Docking;
 /// 负责把窗口吸附到屏幕某一边，并实现「悬停展开 / 移开自动收起」。
 /// 收起态：仅在停靠边中部露出一小段（屏幕长边的 10%、垂直/水平居中）的触发块。
 /// 展开态：沿停靠边铺满工作区。展开/收起同时对位置与尺寸做缓动动画。
+/// 同屏前台全屏或截图期间隐藏整个窗口，退出后恢复此前的显示状态。
 /// </summary>
 public sealed class DockManager
 {
@@ -23,6 +24,8 @@ public sealed class DockManager
     private const double CollapseRatio = 0.10;    // 收起时沿边长度占比
     private const double AnimationMs = 220;
     private static readonly TimeSpan DisplayRefreshInterval = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan FullscreenCheckInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan FullscreenRestoreDelay = TimeSpan.FromMilliseconds(500);
 
     private readonly Window _window;
     private readonly IDockViewport? _viewport;
@@ -30,8 +33,12 @@ public sealed class DockManager
     private readonly DispatcherTimer _animTimer;
     private readonly Stopwatch _animClock = new();
     private readonly Stopwatch _displayRefreshClock = Stopwatch.StartNew();
+    private readonly Stopwatch _fullscreenCheckClock = new();
+    private readonly Stopwatch _fullscreenExitClock = new();
+    private readonly FullscreenWindowDetector _fullscreenDetector = new();
     private DispatcherOperation? _placementRefresh;
     private Matrix _layoutTransform = Matrix.Identity;
+    private IntPtr _displayMonitor;
 
     private DockEdge _edge = DockEdge.Right;
     private string _displayDeviceName = string.Empty;
@@ -40,6 +47,8 @@ public sealed class DockManager
     private DateTime? _outsideSince;
     private bool _suspended;
     private bool _screenshotSuspended;
+    private bool _fullscreenHidden;
+    private bool _restoreVisibility;
     private bool _topmostPromotionFailureLogged;
     private bool _displayReadFailureLogged;
 
@@ -102,19 +111,21 @@ public sealed class DockManager
     private void RefreshPlacement(bool force = false)
     {
         _displayRefreshClock.Restart();
+        IntPtr previousMonitor = _displayMonitor;
         Rect workArea = GetWorkArea();
         Matrix transform = DpiTransform;
-        if (!force && workArea == _workArea && transform == _layoutTransform)
+        if (!force && workArea == _workArea && transform == _layoutTransform && previousMonitor == _displayMonitor)
             return;
 
         Layout(workArea);
         _insideTriggerSince = null;
         _outsideSince = null;
         ApplyRect(_state == DockState.Expanded ? _expandedRect : _collapsedRect, animate: false);
+        RefreshFullscreenVisibility(force: true);
         AppLogger.Info($"[DockManager] Display geometry refreshed: edge={_edge}, state={_state}, workArea={_workArea}, deviceToDip={_layoutTransform}.");
     }
 
-    /// <summary>对话框打开期间暂停轮询，避免面板在用户离开时收起。</summary>
+    /// <summary>交互或命令执行期间暂停悬停展开/收起，显示器和全屏检测继续运行。</summary>
     public void Suspend()
     {
         _suspended = true;
@@ -126,7 +137,10 @@ public sealed class DockManager
     public void SuspendForScreenshot()
     {
         _screenshotSuspended = true;
+        _fullscreenExitClock.Reset();
         _insideTriggerSince = null;
+        _outsideSince = null;
+        UpdateWindowVisibility();
     }
 
     public void ResumeAfterScreenshot()
@@ -134,6 +148,9 @@ public sealed class DockManager
         _screenshotSuspended = false;
         _insideTriggerSince = null;
         _outsideSince = null;
+        RefreshPlacement();
+        RefreshFullscreenVisibility(force: true);
+        UpdateWindowVisibility();
     }
 
     public void SetEdge(DockEdge edge, bool expanded = false)
@@ -149,7 +166,10 @@ public sealed class DockManager
         _outsideSince = null;
         _state = expanded ? DockState.Expanded : DockState.Hidden;
         ApplyRect(expanded ? _expandedRect : _collapsedRect, animate: false);
-        if (expanded)
+        // SourceInitialized also sets placement; wait until the initial Show has completed before hiding.
+        if (_window.IsLoaded)
+            RefreshFullscreenVisibility(force: true);
+        if (expanded && !_fullscreenHidden && !_screenshotSuspended)
             PromoteToTopmost();
         if (edgeChanged)
             EdgeChanged?.Invoke(this, edge);
@@ -164,6 +184,10 @@ public sealed class DockManager
     /// <summary>展开/收起切换（供托盘、全局热键调用）。</summary>
     public void Toggle()
     {
+        RefreshFullscreenVisibility(force: true);
+        if (_fullscreenHidden || _screenshotSuspended)
+            return;
+
         if (_state == DockState.Expanded)
             Collapse();
         else
@@ -228,7 +252,11 @@ public sealed class DockManager
         if (_displayRefreshClock.Elapsed >= DisplayRefreshInterval)
             RefreshPlacement();
 
-        if (_suspended || _screenshotSuspended)
+        if (_screenshotSuspended)
+            return;
+
+        RefreshFullscreenVisibility();
+        if (_suspended || _fullscreenHidden)
             return;
 
         if (!NativeMethods.GetCursorPos(out var p))
@@ -279,6 +307,10 @@ public sealed class DockManager
 
     private void Expand()
     {
+        RefreshFullscreenVisibility(force: true);
+        if (_fullscreenHidden || _screenshotSuspended)
+            return;
+
         PromoteToTopmost();
         if (_state == DockState.Expanded)
             return;
@@ -286,6 +318,77 @@ public sealed class DockManager
         _insideTriggerSince = null;
         _outsideSince = null;
         ApplyRect(_expandedRect, animate: true);
+    }
+
+    private void RefreshFullscreenVisibility(bool force = false)
+    {
+        // The screenshot overlay is our own foreground window. Keep the pre-capture fullscreen
+        // state until the session closes and restores the previous foreground window.
+        if (_screenshotSuspended ||
+            (!force && _fullscreenCheckClock.IsRunning && _fullscreenCheckClock.Elapsed < FullscreenCheckInterval))
+        {
+            return;
+        }
+
+        _fullscreenCheckClock.Restart();
+        bool fullscreen = _fullscreenDetector.IsFullscreenOnMonitor(_displayMonitor);
+        if (fullscreen)
+        {
+            _fullscreenExitClock.Reset();
+        }
+        else if (_fullscreenHidden)
+        {
+            // Switching display modes or Alt-Tab can temporarily leave no foreground window.
+            // Require a stable exit before showing a topmost window over the application again.
+            if (!_fullscreenExitClock.IsRunning)
+                _fullscreenExitClock.Start();
+            if (_fullscreenExitClock.Elapsed < FullscreenRestoreDelay)
+                return;
+        }
+
+        if (_fullscreenHidden == fullscreen)
+            return;
+
+        _fullscreenHidden = fullscreen;
+        _insideTriggerSince = null;
+        _outsideSince = null;
+        UpdateWindowVisibility();
+        AppLogger.Info($"[DockManager] Fullscreen visibility changed: hidden={fullscreen}, state={_state}.");
+    }
+
+    private void UpdateWindowVisibility()
+    {
+        if (_fullscreenHidden || _screenshotSuspended)
+        {
+            _animTimer.Stop();
+            if (_window.IsVisible)
+            {
+                // Share visibility ownership between fullscreen and capture so ending either
+                // one cannot reveal the dock while the other still requires it to be hidden.
+                _restoreVisibility = true;
+                _window.Hide();
+            }
+            return;
+        }
+
+        if (!_restoreVisibility)
+            return;
+
+        _restoreVisibility = false;
+        _insideTriggerSince = null;
+        _outsideSince = null;
+        ApplyRect(_state == DockState.Expanded ? _expandedRect : _collapsedRect, animate: false);
+        bool showActivated = _window.ShowActivated;
+        try
+        {
+            // Restoring a capsule must not steal focus, including when leaving an exclusive game.
+            _window.ShowActivated = false;
+            _window.Show();
+        }
+        finally
+        {
+            _window.ShowActivated = showActivated;
+        }
     }
 
     private void PromoteToTopmost()
@@ -324,9 +427,14 @@ public sealed class DockManager
     {
         _animTimer.Stop();
 
+        // 必须在展开/中断动画前解除收起条的原生裁剪，避免面板仍被限制在窄条内。
+        if (animate || _state == DockState.Expanded)
+            _viewport?.SetCollapsedPresentation(false);
+
         if (!animate)
         {
             SetBounds(target);
+            _viewport?.SetCollapsedPresentation(_state == DockState.Hidden);
             return;
         }
 
@@ -343,6 +451,8 @@ public sealed class DockManager
         {
             _animTimer.Stop();
             SetBounds(_toRect);
+            // 在最终尺寸落定后切换背景和裁剪，动画期间保持完整的面板呈现。
+            _viewport?.SetCollapsedPresentation(_state == DockState.Hidden);
             return;
         }
 
@@ -405,9 +515,9 @@ public sealed class DockManager
 
     private Rect GetWorkArea()
     {
-        Rect? selected = null;
-        Rect? primary = null;
-        Rect? first = null;
+        (IntPtr Monitor, Rect WorkArea)? selected = null;
+        (IntPtr Monitor, Rect WorkArea)? primary = null;
+        (IntPtr Monitor, Rect WorkArea)? first = null;
         // Enumerate native monitors afresh; cached Screen objects can retain the old
         // work area during remote-session resolution and taskbar changes.
         NativeMethods.EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero,
@@ -424,20 +534,22 @@ public sealed class DockManager
                 if (area.Right <= area.Left || area.Bottom <= area.Top)
                     return true;
 
-                Rect workArea = ToDip(area);
-                first ??= workArea;
+                var placement = (Monitor: monitor, WorkArea: ToDip(area));
+                first ??= placement;
                 if ((info.Flags & NativeMethods.MONITORINFOF_PRIMARY) != 0)
-                    primary = workArea;
+                    primary = placement;
                 if (string.Equals(info.DeviceName, _displayDeviceName, StringComparison.OrdinalIgnoreCase))
-                    selected = workArea;
+                    selected = placement;
                 return true;
             }, IntPtr.Zero);
 
-        Rect? available = selected ?? primary ?? first;
-        if (available is Rect availableArea)
+        var available = selected ?? primary ?? first;
+        if (available is { } availablePlacement)
         {
+            // Use the same fallback monitor for fullscreen detection and dock placement.
+            _displayMonitor = availablePlacement.Monitor;
             _displayReadFailureLogged = false;
-            return availableArea;
+            return availablePlacement.WorkArea;
         }
 
         if (!_displayReadFailureLogged)

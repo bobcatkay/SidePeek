@@ -1,6 +1,7 @@
 <UserControl x:Class="SidePeek.App.Views.SettingsView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:vm="clr-namespace:SidePeek.App.ViewModels"
              d:DataContext="{d:DesignInstance vm:SettingsViewModel}"
@@ -8,6 +9,19 @@
              mc:Ignorable="d"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
     <UserControl.Resources>
+        <sys:String x:Key="FontSettingLabel">字体</sys:String>
+        <sys:String x:Key="FontPreviewLabel">预览</sys:String>
+        <sys:String x:Key="FontPreviewChineseText">轻松记录，随时查看。</sys:String>
+        <sys:String x:Key="FontPreviewLatinText">SidePeek Aa Bb Cc 0123456789</sys:String>
+        <sys:String x:Key="FontSettingHint">选择后立即生效并自动保存；键入名称可快速定位。</sys:String>
+        <Thickness x:Key="FontSettingsRowMargin">0,12,0,0</Thickness>
+        <Thickness x:Key="FontSettingHintMargin">0,8,0,0</Thickness>
+        <Thickness x:Key="FontPreviewPadding">10,8</Thickness>
+        <CornerRadius x:Key="FontPreviewCornerRadius">6</CornerRadius>
+        <sys:Double x:Key="FontPreviewSize">14</sys:Double>
+        <sys:Double x:Key="FontSettingHintSize">12</sys:Double>
+        <sys:Double x:Key="FontDropDownHeight">288</sys:Double>
+
         <Style x:Key="SettingsGroup" TargetType="Border">
             <Setter Property="CornerRadius" Value="8" />
             <Setter Property="Padding" Value="14" />
@@ -141,6 +155,9 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="88" />
@@ -156,6 +173,61 @@
                                   ItemsSource="{Binding Themes}"
                                   SelectedItem="{Binding SelectedTheme, Mode=TwoWay}"
                                   DisplayMemberPath="Label" />
+
+                        <TextBlock Grid.Row="2" Style="{StaticResource SettingLabel}"
+                                   Text="{StaticResource FontSettingLabel}"
+                                   FontFamily="{StaticResource DefaultAppFontFamily}"
+                                   Margin="{StaticResource FontSettingsRowMargin}" />
+                        <!-- Keep font names readable even when a symbol font is selected. -->
+                        <ComboBox Grid.Row="2" Grid.Column="1"
+                                  Margin="{StaticResource FontSettingsRowMargin}"
+                                  ItemsSource="{Binding FontFamilies}"
+                                  SelectedItem="{Binding SelectedFontFamily, Mode=TwoWay}"
+                                  FontFamily="{StaticResource DefaultAppFontFamily}"
+                                  IsEditable="False" IsTextSearchEnabled="True" TextSearch.TextPath="Label"
+                                  MaxDropDownHeight="{StaticResource FontDropDownHeight}"
+                                  ScrollViewer.CanContentScroll="True"
+                                  VirtualizingStackPanel.IsVirtualizing="True"
+                                  VirtualizingStackPanel.VirtualizationMode="Recycling">
+                            <ComboBox.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </ComboBox.ItemsPanel>
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis"
+                                               FontFamily="{StaticResource DefaultAppFontFamily}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <TextBlock Grid.Row="3" Style="{StaticResource SettingLabel}"
+                                   Text="{StaticResource FontPreviewLabel}"
+                                   FontFamily="{StaticResource DefaultAppFontFamily}"
+                                   Margin="{StaticResource FontSettingsRowMargin}" />
+                        <Border Grid.Row="3" Grid.Column="1"
+                                Margin="{StaticResource FontSettingsRowMargin}"
+                                Padding="{StaticResource FontPreviewPadding}"
+                                CornerRadius="{StaticResource FontPreviewCornerRadius}"
+                                Background="{DynamicResource ControlFillColorDefaultBrush}">
+                            <StackPanel>
+                                <TextBlock Text="{StaticResource FontPreviewChineseText}" TextWrapping="Wrap"
+                                           FontFamily="{DynamicResource AppFontFamily}"
+                                           FontSize="{StaticResource FontPreviewSize}"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                                <TextBlock Text="{StaticResource FontPreviewLatinText}" TextWrapping="Wrap"
+                                           FontFamily="{DynamicResource AppFontFamily}"
+                                           FontSize="{StaticResource FontPreviewSize}"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Grid.Row="4" Grid.ColumnSpan="2"
+                                   Text="{StaticResource FontSettingHint}" TextWrapping="Wrap"
+                                   Margin="{StaticResource FontSettingHintMargin}"
+                                   FontFamily="{StaticResource DefaultAppFontFamily}"
+                                   FontSize="{StaticResource FontSettingHintSize}"
+                                   Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
                     </Grid>
                 </Border>
 

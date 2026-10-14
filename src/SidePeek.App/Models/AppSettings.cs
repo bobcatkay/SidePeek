@@ -26,6 +26,7 @@ public sealed class AppSettings
     public int CollapseDelayMs { get; set; } = DefaultCollapseDelayMs;
     public int NoteHistoryMonths { get; set; } = 12;
     public AppThemeMode Theme { get; set; } = AppThemeMode.Light;
+    public string FontFamilyName { get; set; } = string.Empty;
     public bool StartWithWindows { get; set; }
     public HotkeySettings Hotkey { get; set; } = new();
     public HotkeySettings ScreenshotHotkey { get; set; } = new() { Key = "A" };

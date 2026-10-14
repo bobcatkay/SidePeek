@@ -13,6 +13,8 @@ dotnet run --project src/SidePeek.App/SidePeek.App.csproj
 
 ## 发布
 
+日常发布只需提交并 push 到 main，GitHub Actions 自动完成版本递增、tag、编译、打包和 Release，见 [自动发布说明](RELEASING.md)。流水线会回写版本提交，开始下一次开发前执行 `git pull --rebase origin main`。以下脚本保留用于本地打包；自动发布无需提前运行 `build-release.ps1`。
+
 ```powershell
 .\build.ps1
 .\build.ps1 -NuGetProxy ''

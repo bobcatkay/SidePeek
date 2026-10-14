@@ -77,6 +77,8 @@ public static class SettingsService
 
     private static void Normalize(AppSettings settings)
     {
+        settings.FontFamilyName = FontService.NormalizeFamilyName(settings.FontFamilyName);
+
         if (settings.DockEdge is not DockEdge.Left and not DockEdge.Right)
             settings.DockEdge = DockEdge.Right;
 

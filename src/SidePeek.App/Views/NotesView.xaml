@@ -13,7 +13,7 @@
         <conv:StringToBrushConverter x:Key="StringToBrush" />
 
         <Style x:Key="ClockTimeText" TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Display, Segoe UI" />
+            <Setter Property="FontFamily" Value="{DynamicResource AppDisplayFontFamily}" />
             <Setter Property="FontSize" Value="42" />
             <Setter Property="FontWeight" Value="SemiBold" />
             <Setter Property="Foreground" Value="White" />

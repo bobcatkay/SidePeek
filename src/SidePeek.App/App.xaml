@@ -10,9 +10,14 @@
                 <ui:ThemesDictionary Theme="Light" />
                 <ui:ControlsDictionary />
             </ResourceDictionary.MergedDictionaries>
+            <sys:String x:Key="DefaultFontLabel">默认字体</sys:String>
+            <FontFamily x:Key="DefaultAppFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+            <FontFamily x:Key="DefaultAppDisplayFontFamily">Segoe UI Variable Display, Segoe UI</FontFamily>
+            <FontFamily x:Key="AppFontFamily">Segoe UI Variable Text, Segoe UI</FontFamily>
+            <FontFamily x:Key="AppDisplayFontFamily">Segoe UI Variable Display, Segoe UI</FontFamily>
             <BooleanToVisibilityConverter x:Key="BoolToVis" />
             <Style x:Key="SmoothTextBlock" TargetType="{x:Type TextBlock}">
-                <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
+                <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
                 <Setter Property="SnapsToDevicePixels" Value="False" />
                 <Setter Property="UseLayoutRounding" Value="False" />
                 <Setter Property="TextOptions.TextFormattingMode" Value="Ideal" />
@@ -20,7 +25,7 @@
                 <Setter Property="TextOptions.TextHintingMode" Value="Animated" />
             </Style>
             <Style x:Key="CrispSmallTextBlock" TargetType="{x:Type TextBlock}">
-                <Setter Property="FontFamily" Value="Segoe UI Variable Text, Segoe UI" />
+                <Setter Property="FontFamily" Value="{DynamicResource AppFontFamily}" />
                 <Setter Property="SnapsToDevicePixels" Value="True" />
                 <Setter Property="UseLayoutRounding" Value="True" />
                 <Setter Property="RenderOptions.ClearTypeHint" Value="Enabled" />

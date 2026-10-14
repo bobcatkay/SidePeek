@@ -8,7 +8,7 @@
         Width="440" SizeToContent="Height"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize" Topmost="True"
-        FontFamily="Segoe UI Variable Text, Segoe UI"
+        FontFamily="{DynamicResource AppFontFamily}"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Grayscale"
         TextOptions.TextHintingMode="Animated"
