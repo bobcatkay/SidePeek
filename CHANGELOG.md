@@ -1,5 +1,23 @@
 # 更新日志
 
+## v0.3.20
+
+### 更新内容
+
+#### 改用原生画布修复截图选框拖动卡顿 ([5c491b5](https://github.com/bobcatkay/SidePeek/commit/5c491b51016ccc902b5618a68585d60571c7d9bf))
+
+1. 使用每屏独立的原生画布和局部像素更新绘制选区与标注，避免截图画面依赖 WPF 异步呈现调度。
+2. 保留全桌面物理坐标、跨屏捕获、选区调整和标注导出，处理输入法快捷键及异常关闭时的原生资源释放。
+3. 增加按手势汇总的性能日志、可重复回放、交互回归和 DXGI 桌面更新探针，补充诊断方法与测量边界说明。
+
+### 下载说明
+
+- 普通版：需要安装 .NET 9 Desktop Runtime（Windows x64）。
+- 自包含版：文件名带 selfcontained，无需另外安装 .NET 运行时。
+- 解压后运行 SidePeek.exe；SHA256SUMS.txt 用于核对下载文件。
+
+[完整变更](https://github.com/bobcatkay/SidePeek/compare/v0.3.19...v0.3.20)
+
 ## v0.3.19
 
 ### 更新内容
