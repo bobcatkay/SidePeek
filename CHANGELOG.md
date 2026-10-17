@@ -1,5 +1,24 @@
 # 更新日志
 
+## v0.3.19
+
+### 更新内容
+
+#### 修正截图选框拖动的性能回退 ([6b9da23](https://github.com/bobcatkay/SidePeek/commit/6b9da2340c135078bb6561e17dc871b6e25d09f2))
+
+1. 移除反复订阅的帧回调，选区或草稿改变时直接更新绘制内容。
+2. 使用独立的四块外侧蒙版，取消整屏暗化后在选区重复叠画原图。
+3. 跳过无变化的选区与蒙版更新，折叠的尺寸提示在松手后同步，避免拖动期间额外布局。
+4. 保留标注缓存、最终松手坐标及后台任务暂停机制，并更新架构说明。
+
+### 下载说明
+
+- 普通版：需要安装 .NET 9 Desktop Runtime（Windows x64）。
+- 自包含版：文件名带 selfcontained，无需另外安装 .NET 运行时。
+- 解压后运行 SidePeek.exe；SHA256SUMS.txt 用于核对下载文件。
+
+[完整变更](https://github.com/bobcatkay/SidePeek/compare/v0.3.18...v0.3.19)
+
 ## v0.3.18
 
 ### 更新内容
