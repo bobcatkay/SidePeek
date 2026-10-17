@@ -98,7 +98,7 @@ internal sealed class ScreenshotOverlayWindow : Window
         if (!NativeMethods.SetWindowPos(new WindowInteropHelper(this).Handle, NativeMethods.HWND_TOPMOST,
                 (int)bounds.X, (int)bounds.Y, (int)bounds.Width, (int)bounds.Height, NativeMethods.SWP_NOACTIVATE))
             throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-        _surface.RequestRender();
+        _surface.UpdateVisuals();
     }
 
     internal void SetTool(ScreenshotTool tool)
@@ -176,7 +176,7 @@ internal sealed class ScreenshotOverlayWindow : Window
 
     internal void Refresh()
     {
-        _surface.RequestRender();
+        _surface.UpdateVisuals();
         _toolbar.Refresh();
     }
 
@@ -405,20 +405,19 @@ internal sealed class ScreenshotSurface : FrameworkElement
     private static readonly Color SelectionBorderColor = Color.FromRgb(83, 182, 255);
     private readonly ScreenshotOverlayWindow _session;
     private readonly DrawingVisual _background = new();
-    private readonly DrawingVisual _selection = new();
+    private readonly ShadeVisual _topShade = new();
+    private readonly ShadeVisual _bottomShade = new();
+    private readonly ShadeVisual _leftShade = new();
+    private readonly ShadeVisual _rightShade = new();
     private readonly DrawingVisual _annotations = new();
     private readonly DrawingVisual _interaction = new();
     private readonly VisualCollection _visuals;
     private readonly Rect _desktop;
-    private readonly ImageBrush _desktopBrush;
     private readonly SolidColorBrush _dimBrush;
     private System.Windows.Media.Pen? _border;
     private DpiScale _dpi;
     private bool _viewportReady;
-    private bool _renderPending;
-    private bool _selectionDirty = true;
     private bool _clipReady;
-    private Rect? _renderedHighlight;
     private Rect? _renderedSelection;
     private int _annotationVersion = UnrenderedAnnotationVersion;
     private Point _start;
@@ -432,27 +431,20 @@ internal sealed class ScreenshotSurface : FrameworkElement
     internal ScreenshotSurface(ScreenshotOverlayWindow session)
     {
         _session = session;
-        _visuals = new VisualCollection(this) { _background, _selection, _annotations, _interaction };
-        _desktop = new Rect(0, 0, session.Capture.Image.PixelWidth, session.Capture.Image.PixelHeight);
-        // 固定原图映射，只绘制选区矩形；整图加 Clip 会让动态层仍携带整桌面的绘制内容。
-        _desktopBrush = new ImageBrush(session.Capture.Image)
+        _visuals = new VisualCollection(this)
         {
-            ViewportUnits = BrushMappingMode.Absolute,
-            Viewport = _desktop,
-            Stretch = Stretch.Fill,
-            TileMode = TileMode.None
+            _background, _topShade, _bottomShade, _leftShade, _rightShade, _annotations, _interaction
         };
-        _desktopBrush.Freeze();
+        _desktop = new Rect(0, 0, session.Capture.Image.PixelWidth, session.Capture.Image.PixelHeight);
         _dimBrush = new SolidColorBrush(Color.FromArgb(DimmingAlpha, 0, 0, 0));
         _dimBrush.Freeze();
         Focusable = true;
         Cursor = Cursors.Cross;
         Loaded += (_, _) =>
         {
-            RequestRender();
-            AppLogger.Info($"{LogTag}: screenshot layers ready; desktop={_desktop.Width}x{_desktop.Height}, renderingTier={RenderCapability.Tier >> RenderingTierShift}.");
+            UpdateVisuals();
+            AppLogger.Info($"{LogTag}: input-driven screenshot visuals ready; desktop={_desktop.Width}x{_desktop.Height}, renderingTier={RenderCapability.Tier >> RenderingTierShift}.");
         };
-        Unloaded += (_, _) => CancelPendingRender();
     }
 
     protected override int VisualChildrenCount => _visuals.Count;
@@ -461,24 +453,7 @@ internal sealed class ScreenshotSurface : FrameworkElement
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
     {
         base.OnRenderSizeChanged(sizeInfo);
-        RequestRender();
-    }
-
-    internal void RequestRender()
-    {
-        if (_renderPending || !IsLoaded)
-            return;
-        // 高频鼠标事件只更新状态，同一帧只提交一次绘制，也不触发 FrameworkElement 的布局失效。
-        _renderPending = true;
-        CompositionTarget.Rendering += RenderFrame;
-    }
-
-    private void CancelPendingRender()
-    {
-        if (!_renderPending)
-            return;
-        CompositionTarget.Rendering -= RenderFrame;
-        _renderPending = false;
+        UpdateVisuals();
     }
 
     private void UpdateViewport()
@@ -494,28 +469,19 @@ internal sealed class ScreenshotSurface : FrameworkElement
             visual.Transform = transform;
         _border = new System.Windows.Media.Pen(new SolidColorBrush(SelectionBorderColor), SelectionBorderWidth * dpi.DpiScaleX);
         _border.Freeze();
-        // 暗化桌面是静态层，拖动只更新选区覆盖的原图和边框，避免每帧重建整个桌面。
+        // DrawingVisual 缓存的是绘制指令；背景只保留一张原图，避免选区内重复采样和透明混合。
         using var drawing = _background.RenderOpen();
         drawing.DrawImage(_session.Capture.Image, _desktop);
-        drawing.DrawRectangle(_dimBrush, null, _desktop);
-        _selectionDirty = true;
     }
 
-    private void RenderFrame(object? sender, EventArgs e)
+    internal void UpdateVisuals()
     {
-        CancelPendingRender();
         if (!IsLoaded)
             return;
+        // 输入到达时直接更新保留的绘制内容，由 WPF 合成；不再额外订阅帧回调或在渲染阶段修改布局。
         UpdateViewport();
         var highlight = _session.Selection ?? _session.Hover;
-        if (_selectionDirty || _renderedHighlight != highlight)
-        {
-            using var image = _selection.RenderOpen();
-            if (highlight is { IsEmpty: false } selected)
-                image.DrawRectangle(_desktopBrush, null, selected);
-            _renderedHighlight = highlight;
-            _selectionDirty = false;
-        }
+        UpdateShading(highlight);
         // 已提交标注不会随鼠标改变；移动/缩放选区只更新裁剪，撤销或新增时才重建矢量内容。
         if (_annotationVersion != _session.AnnotationVersion)
         {
@@ -533,7 +499,25 @@ internal sealed class ScreenshotSurface : FrameworkElement
         }
         using (var drawing = _interaction.RenderOpen())
             DrawInteraction(drawing, highlight);
-        _session.RefreshSelectionInfo();
+    }
+
+    private void UpdateShading(Rect? highlight)
+    {
+        // 四块蒙版分别保留，只有边界改变的块才更新；选区内直接露出背景，不再叠画原图。
+        if (highlight is { IsEmpty: false } rect)
+        {
+            _topShade.SetBounds(new Rect(0, 0, _desktop.Width, rect.Top), _dimBrush);
+            _bottomShade.SetBounds(new Rect(0, rect.Bottom, _desktop.Width, Math.Max(0, _desktop.Height - rect.Bottom)), _dimBrush);
+            _leftShade.SetBounds(new Rect(0, rect.Top, rect.Left, rect.Height), _dimBrush);
+            _rightShade.SetBounds(new Rect(rect.Right, rect.Top, Math.Max(0, _desktop.Width - rect.Right), rect.Height), _dimBrush);
+        }
+        else
+        {
+            _topShade.SetBounds(_desktop, _dimBrush);
+            _bottomShade.SetBounds(Rect.Empty, _dimBrush);
+            _leftShade.SetBounds(Rect.Empty, _dimBrush);
+            _rightShade.SetBounds(Rect.Empty, _dimBrush);
+        }
     }
 
     private void DrawInteraction(DrawingContext drawing, Rect? highlight)
@@ -621,16 +605,18 @@ internal sealed class ScreenshotSurface : FrameworkElement
             }
             return;
         }
-        UpdateGesture(point);
-        RequestRender();
+        if (!UpdateGesture(point))
+            return;
+        UpdateVisuals();
+        _session.RefreshSelectionInfo();
     }
 
-    private void UpdateGesture(Point point)
+    private bool UpdateGesture(Point point)
     {
         if (_selecting)
         {
             if ((_start - point).Length >= SelectionDragThreshold)
-                _session.Selection = _session.PixelRect(new Rect(_start, point));
+                return UpdateSelection(_session.PixelRect(new Rect(_start, point)));
         }
         else if (_originalSelection is { } original)
         {
@@ -650,18 +636,34 @@ internal sealed class ScreenshotSurface : FrameworkElement
                 if ((_edges & TopEdge) != 0) top = Math.Min(point.Y, bottom - 1);
                 if ((_edges & BottomEdge) != 0) bottom = Math.Max(point.Y, top + 1);
             }
-            _session.Selection = _session.PixelRect(new Rect(new Point(left, top), new Point(right, bottom)));
+            return UpdateSelection(_session.PixelRect(new Rect(new Point(left, top), new Point(right, bottom))));
         }
         else if (_session.Draft is { } draft && _session.Selection is { } selected)
         {
             point = new Point(Math.Clamp(point.X, selected.Left, selected.Right), Math.Clamp(point.Y, selected.Top, selected.Bottom));
             if (draft.Rectangle)
             {
+                if (draft.Points[^1] == point)
+                    return false;
                 if (draft.Points.Count == 1) draft.Points.Add(point); else draft.Points[1] = point;
+                return true;
             }
             else if ((draft.Points[^1] - point).Length >= 1)
+            {
                 draft.Points.Add(point);
+                return true;
+            }
         }
+        return false;
+    }
+
+    private bool UpdateSelection(Rect selection)
+    {
+        // 像素取整、边界钳制后可能仍是相同选区，无变化的鼠标事件不应产生新的绘制工作。
+        if (_session.Selection == selection)
+            return false;
+        _session.Selection = selection;
+        return true;
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
@@ -669,7 +671,7 @@ internal sealed class ScreenshotSurface : FrameworkElement
         base.OnMouseLeftButtonUp(e);
         if (!IsMouseCaptured)
             return;
-        // 帧合并不能丢失松手位置；提交和导出始终使用最后一个输入坐标。
+        // 松手事件可能没有对应的 MouseMove，提交前补上最终坐标。
         UpdateGesture(ScreenPoint(e));
         if (_selecting)
         {
@@ -729,7 +731,7 @@ internal sealed class ScreenshotSurface : FrameworkElement
         if (_session.Hover != hover)
         {
             _session.Hover = hover;
-            RequestRender();
+            UpdateVisuals();
         }
     }
 
@@ -745,5 +747,20 @@ internal sealed class ScreenshotSurface : FrameworkElement
         if (Math.Abs(point.Y - rect.Top) <= tolerance) edges |= TopEdge;
         else if (Math.Abs(point.Y - rect.Bottom) <= tolerance) edges |= BottomEdge;
         return edges;
+    }
+
+    private sealed class ShadeVisual : DrawingVisual
+    {
+        private Rect _bounds = Rect.Empty;
+
+        internal void SetBounds(Rect bounds, Brush brush)
+        {
+            if (_bounds == bounds)
+                return;
+            _bounds = bounds;
+            using var drawing = RenderOpen();
+            if (!bounds.IsEmpty && bounds.Width > 0 && bounds.Height > 0)
+                drawing.DrawRectangle(brush, null, bounds);
+        }
     }
 }

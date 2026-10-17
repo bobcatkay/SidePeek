@@ -121,7 +121,9 @@ public partial class ScreenshotToolbarWindow : Window
         bool selected = _session.Selection is { IsEmpty: false };
         if (_selectionAvailable != selected)
             RefreshSelectionControls(selected);
-        RefreshStatus();
+        // 此入口只用于拖动；折叠提示在松手后的完整刷新中更新，避免不可见文字随每次输入重新格式化。
+        if (StatusText.Visibility == Visibility.Visible)
+            RefreshStatus();
     }
 
     private void RefreshSelectionControls(bool selected)
@@ -146,7 +148,7 @@ public partial class ScreenshotToolbarWindow : Window
             string text = _error ?? (_busy ? "正在导出截图…" : selectionSize is { } size
                 ? $"{size.Width:0} × {size.Height:0} px · {_captureColorInfo} · 拖动边框调整选区，选择矩形或画笔标注；Tab 隐藏工具栏，Esc 取消"
                 : $"{_captureColorInfo} · 点击吸附窗口，或拖动框选；Tab 隐藏工具栏，Esc 取消");
-            // 即使面板折叠也保持文本最新，信息按钮的 tooltip 绑定到此文本。
+            // 完整刷新及展开信息时同步文本，信息按钮的 tooltip 也使用这里的最新内容。
             if (StatusText.Text != text) StatusText.Text = text;
         }
         // 常规提示按需展开，但导出进度和错误必须始终可见。
