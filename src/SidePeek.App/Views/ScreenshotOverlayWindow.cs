@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
@@ -17,8 +18,16 @@ internal sealed record ScreenshotAnnotation(bool Rectangle, Color Color, double 
 /// <summary>覆盖虚拟桌面的冻结画面，所有选区及标注均保存为物理像素坐标。</summary>
 internal sealed class ScreenshotOverlayWindow : Window
 {
+    private const int DiagnosticReplayStartupDelayMilliseconds = 500;
+    private const string SingleMonitorDiagnosticsVariable = "SIDEPEEK_SCREENSHOT_SINGLE_MONITOR";
+    private const string SpanningDiagnosticsVariable = "SIDEPEEK_SCREENSHOT_SPANNING_WINDOW";
+    private const string DiagnosticsEnabledValue = "1";
     private readonly DesktopCapture _capture;
+    private readonly Rect _windowBounds;
     private readonly ScreenshotSurface _surface;
+    private readonly List<ScreenshotSurface> _surfaces = [];
+    private readonly List<ScreenshotMonitorWindow> _monitorWindows = [];
+    private ScreenshotSurface _inputSurface;
     private readonly ScreenshotToolbarWindow _toolbar;
     private readonly List<ScreenshotAnnotation> _annotations = [];
     private readonly Stack<ScreenshotAnnotation> _redo = [];
@@ -34,37 +43,89 @@ internal sealed class ScreenshotOverlayWindow : Window
     internal DesktopCapture Capture => _capture;
     internal bool CanUndo => _annotations.Count > 0;
     internal bool CanRedo => _redo.Count > 0;
-    internal bool CanExport => Selection is { IsEmpty: false } && !_surface.IsMouseCaptured;
+    internal bool CanExport => Selection is { IsEmpty: false } && !_surfaces.Any(surface => surface.IsGestureActive);
     internal int AnnotationVersion { get; private set; }
+    internal IReadOnlyList<ScreenshotAnnotation> Annotations => _annotations;
 
     internal ScreenshotOverlayWindow(DesktopCapture capture)
     {
         _capture = capture;
+        bool singleMonitor = App.ScreenshotDiagnosticsEnabled
+            && Environment.GetEnvironmentVariable(SingleMonitorDiagnosticsVariable) == DiagnosticsEnabledValue;
+        bool spanningWindow = App.ScreenshotDiagnosticsEnabled
+            && Environment.GetEnvironmentVariable(SpanningDiagnosticsVariable) == DiagnosticsEnabledValue;
+        NativeMethods.GetCursorPos(out var cursor);
+        // 自动对照使用诊断指定的显示器，避免窗口模式改变同时改变测试区域。
+        Point initialScreen = singleMonitor || App.ScreenshotDiagnosticsReplayEnabled
+            ? ScreenshotDiagnostics.ReplayMonitor(capture).Bounds.TopLeft : new Point(cursor.X, cursor.Y);
+        var initialMonitor = capture.Monitors.FirstOrDefault(monitor => monitor.Bounds.Contains(initialScreen))
+            ?? capture.Monitors[0];
+        _windowBounds = spanningWindow ? capture.Bounds : initialMonitor.Bounds;
         Title = "SidePeek 截图";
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
-        ShowInTaskbar = false;
+        // 诊断入口暴露一个可定位的顶层窗口，正常截图仍不占用任务栏。
+        ShowInTaskbar = App.ScreenshotDiagnosticsCaptureVisible;
         Topmost = true;
         Background = Brushes.Black;
         WindowStartupLocation = WindowStartupLocation.Manual;
         Left = -32000;
         Top = -32000;
         Width = Height = 1;
-        _surface = new ScreenshotSurface(this);
-        Content = _surface;
-        _toolbar = new ScreenshotToolbarWindow(this);
+        try
+        {
+            _surface = new ScreenshotSurface(this, _windowBounds, initialMonitor.Bounds);
+            _inputSurface = _surface;
+            _surfaces.Add(_surface);
+            Content = _surface;
+            // 每屏保留独立原生画布和物理边界；手势及导出仍共用全桌面坐标。
+            if (!spanningWindow && !singleMonitor)
+            {
+                foreach (var monitor in capture.Monitors.Where(monitor => monitor != initialMonitor))
+                {
+                    var surface = new ScreenshotSurface(this, monitor.Bounds);
+                    _surfaces.Add(surface);
+                    _monitorWindows.Add(new ScreenshotMonitorWindow(this, monitor.Bounds, surface));
+                }
+            }
+            _toolbar = new ScreenshotToolbarWindow(this);
+        }
+        catch
+        {
+            // 后续屏幕或工具栏创建失败时，先前画布尚未 Loaded，不会收到 Unloaded 释放 DIB。
+            _closed = true;
+            foreach (var surface in _surfaces) surface.DisposeResources();
+            foreach (var monitorWindow in _monitorWindows) monitorWindow.Close();
+            Close();
+            throw;
+        }
         PreviewKeyDown += OnScreenshotKey;
-        Loaded += (_, _) =>
+        Loaded += async (_, _) =>
         {
             PositionOverlay();
+            foreach (var monitorWindow in _monitorWindows)
+            {
+                monitorWindow.Owner = this;
+                monitorWindow.Show();
+            }
             _toolbar.Owner = this;
-            _toolbar.Show();
+            if (!ScreenshotDiagnostics.HideToolbar) _toolbar.Show();
             Activate();
-            _surface.Focus();
+            _surface.FocusInput();
+            AppLogger.Info($"ScreenshotOverlayWindow: overlay opened; windows={_surfaces.Count}, spanningDiagnostics={spanningWindow}.");
+            if (App.ScreenshotDiagnosticsReplayEnabled)
+            {
+                await Task.Delay(DiagnosticReplayStartupDelayMilliseconds);
+                if (!_closed) _surface.ReplaySelection(ScreenshotDiagnostics.AcrossScreensReplay);
+            }
         };
         Closed += (_, _) =>
         {
             _closed = true;
+            // Show 失败或尚未显示就关闭时也须释放原生缓冲，不能只依赖 Unloaded。
+            foreach (var surface in _surfaces) surface.DisposeResources();
+            foreach (var monitorWindow in _monitorWindows)
+                monitorWindow.Close();
             _toolbar.Close();
         };
     }
@@ -72,7 +133,10 @@ internal sealed class ScreenshotOverlayWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
-        HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.AddHook(WindowMessage);
+        var source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+        source?.AddHook(WindowMessage);
+        if (ScreenshotDiagnostics.SoftwareRendering && source?.CompositionTarget is { } target)
+            target.RenderMode = RenderMode.SoftwareOnly;
         ScreenshotNative.ExcludeFromCapture(this);
         PositionOverlay();
     }
@@ -86,7 +150,7 @@ internal sealed class ScreenshotOverlayWindow : Window
         }
         else if (message == NativeMethods.WM_DPICHANGED)
         {
-            // Preserve the virtual desktop bounds instead of accepting a one-monitor suggested rect.
+            // 冻结画布保持当前宿主的物理屏幕边界，不采用 DPI 变化给出的建议范围。
             Dispatcher.BeginInvoke(new Action(() => { if (!_closed) PositionOverlay(); }));
         }
         return IntPtr.Zero;
@@ -94,7 +158,7 @@ internal sealed class ScreenshotOverlayWindow : Window
 
     private void PositionOverlay()
     {
-        var bounds = _capture.Bounds;
+        var bounds = _windowBounds;
         if (!NativeMethods.SetWindowPos(new WindowInteropHelper(this).Handle, NativeMethods.HWND_TOPMOST,
                 (int)bounds.X, (int)bounds.Y, (int)bounds.Width, (int)bounds.Height, NativeMethods.SWP_NOACTIVATE))
             throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
@@ -105,7 +169,7 @@ internal sealed class ScreenshotOverlayWindow : Window
     {
         if (_exporting)
             return;
-        _surface.CancelGesture();
+        CancelGestures();
         if (tool is ScreenshotTool.Window or ScreenshotTool.Area)
         {
             Selection = null;
@@ -116,10 +180,10 @@ internal sealed class ScreenshotOverlayWindow : Window
         else if (Selection is null)
             return;
         Tool = tool;
-        _surface.Cursor = Cursors.Cross;
+        foreach (var surface in _surfaces) surface.Cursor = Cursors.Cross;
         Hover = null;
         Refresh();
-        _surface.Focus();
+        FocusInputSurface();
     }
 
     internal void Selected(Rect rect)
@@ -153,7 +217,7 @@ internal sealed class ScreenshotOverlayWindow : Window
 
     internal void Undo()
     {
-        _surface.CancelGesture();
+        CancelGestures();
         if (_annotations.Count > 0)
         {
             _redo.Push(_annotations[^1]);
@@ -165,7 +229,7 @@ internal sealed class ScreenshotOverlayWindow : Window
 
     internal void Redo()
     {
-        _surface.CancelGesture();
+        CancelGestures();
         if (_redo.TryPop(out var annotation))
         {
             _annotations.Add(annotation);
@@ -176,8 +240,42 @@ internal sealed class ScreenshotOverlayWindow : Window
 
     internal void Refresh()
     {
-        _surface.UpdateVisuals();
+        UpdateVisuals();
         _toolbar.Refresh();
+    }
+
+    internal void UpdateVisuals()
+    {
+        foreach (var surface in _surfaces) surface.UpdateVisuals();
+    }
+
+    internal void UseInputSurface(ScreenshotSurface surface) => _inputSurface = surface;
+
+    internal bool CancelReplay()
+    {
+        if (!_surfaces.Any(surface => surface.IsReplaying)) return false;
+        CancelGestures();
+        return true;
+    }
+
+    internal void CloseFromMonitor()
+        => Dispatcher.BeginInvoke(new Action(() => { if (!_closed) Close(); }));
+
+    private void FocusInputSurface()
+    {
+        Window.GetWindow(_inputSurface)?.Activate();
+        _inputSurface.FocusInput();
+    }
+
+    private void CancelGestures()
+    {
+        foreach (var surface in _surfaces.Where(surface => surface.IsGestureActive))
+            surface.CancelGesture();
+    }
+
+    private void SetSurfaceInputEnabled(bool enabled)
+    {
+        foreach (var surface in _surfaces) surface.IsEnabled = enabled;
     }
 
     internal void RefreshSelectionInfo() => _toolbar.RefreshSelection();
@@ -190,49 +288,60 @@ internal sealed class ScreenshotOverlayWindow : Window
     }
 
     internal void OnScreenshotKey(object sender, KeyEventArgs e)
+        => e.Handled = HandleKey(e.Key, Keyboard.Modifiers);
+
+    internal bool HandleNativeKey(int virtualKey, bool control, bool shift, bool alt)
+        => HandleKey(KeyInterop.KeyFromVirtualKey(virtualKey),
+            (control ? ModifierKeys.Control : ModifierKeys.None)
+            | (shift ? ModifierKeys.Shift : ModifierKeys.None)
+            | (alt ? ModifierKeys.Alt : ModifierKeys.None));
+
+    private bool HandleKey(Key key, ModifierKeys modifiers)
     {
         if (_exporting)
         {
-            if (e.Key == Key.Escape)
+            if (key == Key.Escape)
                 Close();
-            e.Handled = true;
-            return;
+            return true;
         }
-        var modifiers = Keyboard.Modifiers;
-        if (e.Key == Key.Escape)
+        if (key == Key.Escape)
             Close();
-        else if ((modifiers == ModifierKeys.Control && e.Key == Key.C)
-                 || (modifiers == ModifierKeys.None && e.Key == Key.Enter))
+        else if ((modifiers == ModifierKeys.Control && key == Key.C)
+                 || (modifiers == ModifierKeys.None && key == Key.Enter))
             CopyImage();
-        else if (modifiers == ModifierKeys.Control && e.Key == Key.S)
+        else if (modifiers == ModifierKeys.Control && key == Key.S)
             SaveImage();
-        else if (modifiers == ModifierKeys.Control && e.Key == Key.Z)
+        else if (modifiers == ModifierKeys.Control && key == Key.Z)
             Undo();
-        else if ((modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && e.Key == Key.Z)
-                 || (modifiers == ModifierKeys.Control && e.Key == Key.Y))
+        else if ((modifiers == (ModifierKeys.Control | ModifierKeys.Shift) && key == Key.Z)
+                 || (modifiers == ModifierKeys.Control && key == Key.Y))
             Redo();
-        else if (modifiers == ModifierKeys.None && e.Key == Key.Tab)
+        else if (modifiers == ModifierKeys.None && key == Key.Tab)
         {
             if (_toolbar.IsVisible) _toolbar.Hide(); else _toolbar.Show();
         }
-        else if (modifiers == ModifierKeys.None && e.Key == Key.W)
+        else if (modifiers == ModifierKeys.None && key == Key.W)
             SetTool(ScreenshotTool.Window);
-        else if (modifiers == ModifierKeys.None && e.Key == Key.A)
+        else if (modifiers == ModifierKeys.None && key == Key.A)
             SetTool(ScreenshotTool.Area);
-        else if (modifiers == ModifierKeys.None && e.Key == Key.V)
+        else if (modifiers == ModifierKeys.None && key == Key.V)
             SetTool(ScreenshotTool.Adjust);
-        else if (modifiers == ModifierKeys.None && e.Key == Key.R)
+        else if (modifiers == ModifierKeys.None && key == Key.R)
             SetTool(ScreenshotTool.Rectangle);
-        else if (modifiers == ModifierKeys.None && e.Key == Key.P)
+        else if (modifiers == ModifierKeys.None && key == Key.P)
             SetTool(ScreenshotTool.Pen);
+        else if (App.ScreenshotDiagnosticsEnabled && modifiers == ModifierKeys.None && key == Key.F8)
+            _inputSurface.ReplaySelection();
+        else if (App.ScreenshotDiagnosticsEnabled && modifiers == ModifierKeys.None && key == Key.F9)
+            _inputSurface.ReplaySelection(acrossScreens: true);
         else
-            return;
-        e.Handled = true;
+            return false;
+        return true;
     }
 
-    private BitmapSource RenderSelection()
+    internal BitmapSource RenderSelection()
     {
-        _surface.CancelGesture();
+        CancelGestures();
         if (Selection is not { IsEmpty: false } rect || rect.Width < 1 || rect.Height < 1)
             throw new InvalidOperationException("请先选择截图区域。");
         var crop = new CroppedBitmap(_capture.Image,
@@ -258,7 +367,7 @@ internal sealed class ScreenshotOverlayWindow : Window
         if (_exporting || !CanExport)
             return;
         _exporting = true;
-        _surface.IsEnabled = false;
+        SetSurfaceInputEnabled(false);
         _toolbar.SetBusy(true);
         try
         {
@@ -293,7 +402,7 @@ internal sealed class ScreenshotOverlayWindow : Window
         finally
         {
             _exporting = false;
-            _surface.IsEnabled = true;
+            SetSurfaceInputEnabled(true);
             if (!_closed) _toolbar.SetBusy(false);
         }
     }
@@ -303,7 +412,7 @@ internal sealed class ScreenshotOverlayWindow : Window
         if (_exporting || !CanExport)
             return;
         _exporting = true;
-        _surface.IsEnabled = false;
+        SetSurfaceInputEnabled(false);
         _toolbar.SetBusy(true);
         string? temporary = null;
         try
@@ -342,7 +451,7 @@ internal sealed class ScreenshotOverlayWindow : Window
                 catch (UnauthorizedAccessException) { }
             }
             _exporting = false;
-            _surface.IsEnabled = true;
+            SetSurfaceInputEnabled(true);
             if (!_closed) _toolbar.SetBusy(false);
         }
     }
@@ -395,6 +504,10 @@ internal sealed class ScreenshotOverlayWindow : Window
 internal sealed class ScreenshotSurface : FrameworkElement
 {
     private const string LogTag = nameof(ScreenshotSurface);
+    private const string FrameSyncDiagnosticsVariable = "SIDEPEEK_SCREENSHOT_FRAME_SYNC";
+    private const string DiagnosticsEnabledValue = "1";
+    private const string FrameSyncSchedulingMode = "frame-sync";
+    private const string InputSchedulingMode = "input-driven";
     private const byte DimmingAlpha = 120;
     private const double SelectionBorderWidth = 2;
     private const double SelectionHandleRadius = 3;
@@ -402,8 +515,18 @@ internal sealed class ScreenshotSurface : FrameworkElement
     private const double SelectionEdgeTolerance = 8;
     private const int UnrenderedAnnotationVersion = -1;
     private const int RenderingTierShift = 16;
+    private const double ReplayStartFraction = 0.15;
+    private const double ReplayEndFraction = 0.85;
+    private const int ReplaySweepCount = 4;
+    private const int PresentationDrainMilliseconds = 200;
     private static readonly Color SelectionBorderColor = Color.FromRgb(83, 182, 255);
     private readonly ScreenshotOverlayWindow _session;
+    private readonly ScreenshotPerformanceProbe _performance = new();
+    private ScreenshotPresentationProbe? _presentationProbe;
+    private long _presentationMarker;
+    private long _drawnPresentationMarker;
+    private readonly bool _frameSyncEnabled = ScreenshotDiagnostics.WpfRenderer
+        && Environment.GetEnvironmentVariable(FrameSyncDiagnosticsVariable) == DiagnosticsEnabledValue;
     private readonly DrawingVisual _background = new();
     private readonly ShadeVisual _topShade = new();
     private readonly ShadeVisual _bottomShade = new();
@@ -411,44 +534,116 @@ internal sealed class ScreenshotSurface : FrameworkElement
     private readonly ShadeVisual _rightShade = new();
     private readonly DrawingVisual _annotations = new();
     private readonly DrawingVisual _interaction = new();
+    private readonly DrawingVisual _diagnosticMarkerVisual = new();
     private readonly VisualCollection _visuals;
+    private readonly ScreenshotNativeCanvas? _nativeCanvas;
     private readonly Rect _desktop;
+    private readonly Rect _viewport;
+    private readonly Rect _replayViewport;
+    private readonly BitmapSource _backgroundImage;
     private readonly SolidColorBrush _dimBrush;
     private System.Windows.Media.Pen? _border;
     private DpiScale _dpi;
     private bool _viewportReady;
     private bool _clipReady;
+    private bool _interactionReady;
+    private Rect? _drawnHighlight;
+    private ScreenshotTool _drawnTool;
+    private bool _hadDraft;
     private Rect? _renderedSelection;
     private int _annotationVersion = UnrenderedAnnotationVersion;
     private Point _start;
     private bool _selecting;
     private Rect? _originalSelection;
     private int _edges;
+    private CancellationTokenSource? _replayCancellation;
+    private bool _gestureRenderingSubscribed;
+    private bool _gestureVisualsDirty;
+    private bool _resourcesDisposed;
+    private TimeSpan? _lastGestureRenderingTime;
+    private string VisualSchedulingMode => _frameSyncEnabled ? FrameSyncSchedulingMode : InputSchedulingMode;
+    private bool PointerCaptured => _nativeCanvas?.IsPointerCaptured ?? IsMouseCaptured;
+    internal bool IsGestureActive => PointerCaptured || _replayCancellation is not null;
+    internal bool IsReplaying => _replayCancellation is not null;
     private const int LeftEdge = 1, TopEdge = 2, RightEdge = 4, BottomEdge = 8;
     private const int TopLeftCorner = LeftEdge | TopEdge, TopRightCorner = RightEdge | TopEdge;
     private const int BottomLeftCorner = LeftEdge | BottomEdge, BottomRightCorner = RightEdge | BottomEdge;
 
-    internal ScreenshotSurface(ScreenshotOverlayWindow session)
+    internal ScreenshotSurface(ScreenshotOverlayWindow session, Rect screenBounds, Rect? replayScreenBounds = null)
     {
         _session = session;
         _visuals = new VisualCollection(this)
         {
-            _background, _topShade, _bottomShade, _leftShade, _rightShade, _annotations, _interaction
+            _background, _topShade, _bottomShade, _leftShade, _rightShade, _annotations, _interaction, _diagnosticMarkerVisual
         };
         _desktop = new Rect(0, 0, session.Capture.Image.PixelWidth, session.Capture.Image.PixelHeight);
+        _viewport = new Rect(screenBounds.X - session.Capture.Bounds.X, screenBounds.Y - session.Capture.Bounds.Y,
+            screenBounds.Width, screenBounds.Height);
+        var replayBounds = replayScreenBounds ?? screenBounds;
+        _replayViewport = new Rect(replayBounds.X - session.Capture.Bounds.X, replayBounds.Y - session.Capture.Bounds.Y,
+            replayBounds.Width, replayBounds.Height);
+        // 各窗口只上传本屏位图；最终导出仍使用会话内未经裁剪的原始图。
+        _backgroundImage = new CroppedBitmap(session.Capture.Image,
+            new Int32Rect((int)_viewport.X, (int)_viewport.Y, (int)_viewport.Width, (int)_viewport.Height));
+        _backgroundImage.Freeze();
+        var viewportClip = new RectangleGeometry(_viewport);
+        viewportClip.Freeze();
+        _interaction.Clip = viewportClip;
         _dimBrush = new SolidColorBrush(Color.FromArgb(DimmingAlpha, 0, 0, 0));
         _dimBrush.Freeze();
         Focusable = true;
         Cursor = Cursors.Cross;
+        if (!ScreenshotDiagnostics.WpfRenderer)
+        {
+            // 输入与选框像素在同一原生子窗口更新，避开 WPF 高频提交后桌面长时间不更新的路径。
+            _nativeCanvas = new ScreenshotNativeCanvas(session, this, _viewport, _backgroundImage);
+            _visuals.Clear();
+            _visuals.Add(_nativeCanvas);
+            AddLogicalChild(_nativeCanvas);
+        }
         Loaded += (_, _) =>
         {
             UpdateVisuals();
-            AppLogger.Info($"{LogTag}: input-driven screenshot visuals ready; desktop={_desktop.Width}x{_desktop.Height}, renderingTier={RenderCapability.Tier >> RenderingTierShift}.");
+            var target = (PresentationSource.FromVisual(this) as HwndSource)?.CompositionTarget;
+            AppLogger.Info($"{LogTag}: screenshot visuals ready; backend={(_nativeCanvas is null ? "WPF" : "GDI")}, visualScheduling={VisualSchedulingMode}, frameSyncDiagnostics={_frameSyncEnabled}, "
+                + $"desktop={_desktop.Width}x{_desktop.Height}, viewport={_viewport.Width}x{_viewport.Height}, "
+                + $"dpi={_dpi.DpiScaleX:F2}x{_dpi.DpiScaleY:F2}, renderingTier={RenderCapability.Tier >> RenderingTierShift}, "
+                + $"maxTexture={RenderCapability.MaxHardwareTextureSize}, renderMode={target?.RenderMode}, monitors={session.Capture.Monitors.Count}.");
         };
+        Unloaded += (_, _) => DisposeResources();
+    }
+
+    internal void DisposeResources()
+    {
+        if (_resourcesDisposed) return;
+        _resourcesDisposed = true;
+        _replayCancellation?.Cancel();
+        StopGestureRendering(flush: false);
+        _presentationProbe?.Dispose();
+        _nativeCanvas?.Dispose();
+        _performance.Dispose();
     }
 
     protected override int VisualChildrenCount => _visuals.Count;
     protected override Visual GetVisualChild(int index) => _visuals[index];
+
+    protected override Size MeasureOverride(Size availableSize)
+    {
+        _nativeCanvas?.Measure(availableSize);
+        return _nativeCanvas?.DesiredSize ?? base.MeasureOverride(availableSize);
+    }
+
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        _nativeCanvas?.Arrange(new Rect(finalSize));
+        return finalSize;
+    }
+
+    internal void FocusInput()
+    {
+        Focus();
+        _nativeCanvas?.FocusInput();
+    }
 
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
     {
@@ -463,7 +658,9 @@ internal sealed class ScreenshotSurface : FrameworkElement
             return;
         _dpi = dpi;
         _viewportReady = true;
-        var transform = new ScaleTransform(1 / dpi.DpiScaleX, 1 / dpi.DpiScaleY);
+        _interactionReady = false;
+        var transform = new MatrixTransform(1 / dpi.DpiScaleX, 0, 0, 1 / dpi.DpiScaleY,
+            -_viewport.X / dpi.DpiScaleX, -_viewport.Y / dpi.DpiScaleY);
         transform.Freeze();
         foreach (DrawingVisual visual in _visuals)
             visual.Transform = transform;
@@ -471,14 +668,21 @@ internal sealed class ScreenshotSurface : FrameworkElement
         _border.Freeze();
         // DrawingVisual 缓存的是绘制指令；背景只保留一张原图，避免选区内重复采样和透明混合。
         using var drawing = _background.RenderOpen();
-        drawing.DrawImage(_session.Capture.Image, _desktop);
+        drawing.DrawImage(_backgroundImage, _viewport);
     }
 
     internal void UpdateVisuals()
     {
         if (!IsLoaded)
             return;
-        // 输入到达时直接更新保留的绘制内容，由 WPF 合成；不再额外订阅帧回调或在渲染阶段修改布局。
+        if (_nativeCanvas is not null)
+        {
+            _dpi = VisualTreeHelper.GetDpi(this);
+            _nativeCanvas.SetCursor(Cursor);
+            _nativeCanvas.UpdateVisuals(_presentationProbe, _presentationMarker);
+            return;
+        }
+        // 只更新保留的绘制内容；诊断帧合并可从 Rendering 调用，工具栏布局仍在输入阶段更新。
         UpdateViewport();
         var highlight = _session.Selection ?? _session.Hover;
         UpdateShading(highlight);
@@ -489,31 +693,59 @@ internal sealed class ScreenshotSurface : FrameworkElement
             _session.DrawAnnotations(annotations, includeDraft: false);
             _annotationVersion = _session.AnnotationVersion;
         }
-        if (!_clipReady || _renderedSelection != _session.Selection)
+        Rect selectionClip = _session.Selection is { } selection ? Rect.Intersect(selection, _viewport) : Rect.Empty;
+        if (!_clipReady || _renderedSelection != selectionClip)
         {
-            var clip = new RectangleGeometry(_session.Selection ?? Rect.Empty);
+            var clip = new RectangleGeometry(selectionClip);
             clip.Freeze();
             _annotations.Clip = clip;
-            _renderedSelection = _session.Selection;
+            _renderedSelection = selectionClip;
             _clipReady = true;
         }
-        using (var drawing = _interaction.RenderOpen())
-            DrawInteraction(drawing, highlight);
+        Rect? visibleHighlight = null;
+        if (highlight is { } bounds)
+        {
+            // 边框和手柄会伸出选区；屏缝两侧都要绘制各自可见部分，不能只用选区本体剔除。
+            Rect inkBounds = bounds;
+            double outsideInk = (SelectionBorderWidth / 2
+                + (_session.Tool == ScreenshotTool.Adjust ? SelectionHandleRadius : 0)) * _dpi.DpiScaleX;
+            inkBounds.Inflate(outsideInk, outsideInk);
+            if (inkBounds.IntersectsWith(_viewport)) visibleHighlight = bounds;
+        }
+        bool hasDraft = _session.Draft is not null;
+        // 选区完全位于另一屏时，不使本屏的交互图层失效；边框仍画原始选区并裁剪，避免屏缝出现假边。
+        if (!_interactionReady || _drawnHighlight != visibleHighlight || _drawnTool != _session.Tool || hasDraft || _hadDraft)
+        {
+            using var drawing = _interaction.RenderOpen();
+            DrawInteraction(drawing, visibleHighlight);
+            _drawnHighlight = visibleHighlight;
+            _drawnTool = _session.Tool;
+            _hadDraft = hasDraft;
+            _interactionReady = true;
+        }
+        if (_drawnPresentationMarker != _presentationMarker)
+        {
+            // 同一 UI 调用内更新，随选框一起提交；独立小图层避免条码扩大选框的重绘包围盒。
+            using var markerDrawing = _diagnosticMarkerVisual.RenderOpen();
+            _presentationProbe?.DrawMarker(markerDrawing, _presentationMarker);
+            _drawnPresentationMarker = _presentationMarker;
+        }
     }
 
     private void UpdateShading(Rect? highlight)
     {
         // 四块蒙版分别保留，只有边界改变的块才更新；选区内直接露出背景，不再叠画原图。
-        if (highlight is { IsEmpty: false } rect)
+        Rect rect = highlight is { } bounds ? Rect.Intersect(bounds, _viewport) : Rect.Empty;
+        if (!rect.IsEmpty)
         {
-            _topShade.SetBounds(new Rect(0, 0, _desktop.Width, rect.Top), _dimBrush);
-            _bottomShade.SetBounds(new Rect(0, rect.Bottom, _desktop.Width, Math.Max(0, _desktop.Height - rect.Bottom)), _dimBrush);
-            _leftShade.SetBounds(new Rect(0, rect.Top, rect.Left, rect.Height), _dimBrush);
-            _rightShade.SetBounds(new Rect(rect.Right, rect.Top, Math.Max(0, _desktop.Width - rect.Right), rect.Height), _dimBrush);
+            _topShade.SetBounds(new Rect(_viewport.Left, _viewport.Top, _viewport.Width, rect.Top - _viewport.Top), _dimBrush);
+            _bottomShade.SetBounds(new Rect(_viewport.Left, rect.Bottom, _viewport.Width, _viewport.Bottom - rect.Bottom), _dimBrush);
+            _leftShade.SetBounds(new Rect(_viewport.Left, rect.Top, rect.Left - _viewport.Left, rect.Height), _dimBrush);
+            _rightShade.SetBounds(new Rect(rect.Right, rect.Top, _viewport.Right - rect.Right, rect.Height), _dimBrush);
         }
         else
         {
-            _topShade.SetBounds(_desktop, _dimBrush);
+            _topShade.SetBounds(_viewport, _dimBrush);
             _bottomShade.SetBounds(Rect.Empty, _dimBrush);
             _leftShade.SetBounds(Rect.Empty, _dimBrush);
             _rightShade.SetBounds(Rect.Empty, _dimBrush);
@@ -559,8 +791,18 @@ internal sealed class ScreenshotSurface : FrameworkElement
     protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonDown(e);
-        Focus();
-        _start = ScreenPoint(e);
+        if (_nativeCanvas is null) e.Handled = PointerDown(ScreenPoint(e));
+    }
+
+    internal void NativePointerDown(Point point, int timestamp) => PointerDown(point);
+
+    private bool PointerDown(Point point)
+    {
+        if (_session.CancelReplay())
+            return true;
+        _session.UseInputSurface(this);
+        FocusInput();
+        _start = point;
         if (_session.Selection is not { } selection)
         {
             _selecting = true;
@@ -570,24 +812,39 @@ internal sealed class ScreenshotSurface : FrameworkElement
         {
             _edges = EdgesAt(_start, selection);
             if (_edges == 0 && !selection.Contains(_start))
-                return;
+                return false;
             _originalSelection = selection;
         }
         else if (selection.Contains(_start) && _session.Tool is ScreenshotTool.Rectangle or ScreenshotTool.Pen)
             _session.Draft = new ScreenshotAnnotation(_session.Tool == ScreenshotTool.Rectangle,
                 _session.InkColor, _session.InkWidth, [_start]);
         else
-            return;
-        CaptureMouse();
+            return false;
+        if (!(_nativeCanvas?.CapturePointer() ?? CaptureMouse()))
+        {
+            // 捕获失败不会收到预期的松手事件，不能留下持续 Rendering 订阅。
+            CancelGesture();
+            return true;
+        }
+        BeginGestureRendering(_selecting ? $"{_session.Tool}:Select" : _session.Tool.ToString());
         _session.Refresh();
-        e.Handled = true;
+        return true;
     }
 
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        Point point = ScreenPoint(e);
-        if (!IsMouseCaptured)
+        if (_nativeCanvas is null) PointerMove(ScreenPoint(e), e.Timestamp);
+    }
+
+    internal void NativePointerMove(Point point, int timestamp) => PointerMove(point, timestamp);
+
+    private void PointerMove(Point point, int timestamp)
+    {
+        long inputStarted = Stopwatch.GetTimestamp();
+        if (PointerCaptured)
+            _performance.RecordInput(timestamp);
+        if (!PointerCaptured)
         {
             if (_session.Selection is null)
                 UpdateHover(point);
@@ -602,13 +859,155 @@ internal sealed class ScreenshotSurface : FrameworkElement
                     TopRightCorner or BottomLeftCorner => Cursors.SizeNESW,
                     _ => selection.Contains(point) ? Cursors.SizeAll : Cursors.Cross
                 };
+                _nativeCanvas?.SetCursor(Cursor);
             }
             return;
         }
-        if (!UpdateGesture(point))
+        UpdateGestureVisuals(point, inputStarted);
+    }
+
+    private void UpdateGestureVisuals(Point point, long inputStarted)
+    {
+        bool changed = UpdateGesture(point);
+        double visualMs = 0, toolbarMs = 0;
+        if (changed)
+        {
+            _presentationMarker = _presentationProbe?.RecordInput(inputStarted) ?? 0;
+            if (_gestureRenderingSubscribed)
+            {
+                // 模型和笔迹点已逐次更新，只合并绘制，避免丢失画笔的中间采样。
+                _gestureVisualsDirty = true;
+            }
+            else
+            {
+                long visualStarted = Stopwatch.GetTimestamp();
+                _session.UpdateVisuals();
+                visualMs = Stopwatch.GetElapsedTime(visualStarted).TotalMilliseconds;
+            }
+            long toolbarStarted = Stopwatch.GetTimestamp();
+            _session.RefreshSelectionInfo();
+            toolbarMs = Stopwatch.GetElapsedTime(toolbarStarted).TotalMilliseconds;
+        }
+        _performance.RecordUpdate(visualMs, toolbarMs, Stopwatch.GetElapsedTime(inputStarted).TotalMilliseconds, changed);
+    }
+
+    private void BeginGestureRendering(string tool)
+    {
+        // summary 中区分两条路径；frame-sync 的 visualUpdateMs 仅统计输入阶段，不包含延后的绘制。
+        _performance.Begin($"{tool}:{VisualSchedulingMode}");
+        if (!_frameSyncEnabled || _gestureRenderingSubscribed)
             return;
-        UpdateVisuals();
-        _session.RefreshSelectionInfo();
+        _gestureVisualsDirty = false;
+        _lastGestureRenderingTime = null;
+        // 整个手势保持订阅，让 WPF 使用持续呈现调度；逐次订阅并立即退订不能提供这一边界。
+        CompositionTarget.Rendering += OnGestureRendering;
+        _gestureRenderingSubscribed = true;
+    }
+
+    private void OnGestureRendering(object? sender, EventArgs e)
+    {
+        if (!_gestureRenderingSubscribed || !_gestureVisualsDirty || !IsLoaded)
+            return;
+        if (e is RenderingEventArgs rendering)
+        {
+            // 同一预计呈现时刻可能出现额外回调，只提交最新模型的一次绘制。
+            if (_lastGestureRenderingTime == rendering.RenderingTime)
+                return;
+            _lastGestureRenderingTime = rendering.RenderingTime;
+        }
+        _gestureVisualsDirty = false;
+        _session.UpdateVisuals();
+    }
+
+    private void StopGestureRendering(bool flush)
+    {
+        if (!_gestureRenderingSubscribed)
+            return;
+        CompositionTarget.Rendering -= OnGestureRendering;
+        _gestureRenderingSubscribed = false;
+        _gestureVisualsDirty = false;
+        _lastGestureRenderingTime = null;
+        // 松手及回滚不等待下一帧；卸载时直接释放订阅，不再绘制已销毁的宿主。
+        if (flush && IsLoaded)
+            _session.UpdateVisuals();
+    }
+
+    internal async void ReplaySelection(bool acrossScreens = false)
+    {
+        if (!App.ScreenshotDiagnosticsEnabled || _replayCancellation is not null)
+            return;
+        if (ScreenshotDiagnostics.InteractionRegression)
+        {
+            try
+            {
+                ScreenshotInteractionDiagnostics.Run(_session, this, _replayViewport);
+            }
+            catch (Exception error)
+            {
+                AppLogger.Error($"{LogTag}: interaction regression failed.", error);
+                _session.Close();
+                if (ScreenshotDiagnostics.ExitAfterReplay) Application.Current.Shutdown(1);
+                return;
+            }
+        }
+        _session.SetTool(ScreenshotTool.Area);
+        using var cancellation = new CancellationTokenSource();
+        _replayCancellation = cancellation;
+        var viewport = acrossScreens ? _desktop : _replayViewport;
+        _start = new Point(viewport.X + viewport.Width * ReplayStartFraction, viewport.Y + viewport.Height * ReplayStartFraction);
+        _selecting = true;
+        BeginGestureRendering(acrossScreens ? "Replay:AcrossScreens" : "Replay:Select");
+        try
+        {
+            var monitorBounds = _replayViewport;
+            monitorBounds.Offset(_session.Capture.Bounds.X, _session.Capture.Bounds.Y);
+            var monitor = _session.Capture.Monitors.First(item => item.Bounds == monitorBounds);
+            _presentationProbe = ScreenshotPresentationProbe.TryCreate(monitor, _replayViewport);
+            if (_presentationProbe is not null && !await _presentationProbe.Ready)
+                AppLogger.Info($"{LogTag}: presentation readback unavailable; replay continues without display latency evidence.");
+            // 复用真实拖动的更新路径，持续改变大选区；合成输入只能测 UI 排队和更新，不能代替系统鼠标延迟。
+            await ScreenshotInputReplay.RunAsync(Dispatcher, (timestamp, progress) =>
+            {
+                long started = Stopwatch.GetTimestamp();
+                _performance.RecordInput(timestamp);
+                double sweep = (1 - Math.Cos(progress * (ReplaySweepCount * Math.Tau + Math.PI))) / 2;
+                double fraction = ReplayStartFraction + (ReplayEndFraction - ReplayStartFraction) * sweep;
+                UpdateGestureVisuals(new Point(viewport.X + viewport.Width * fraction, viewport.Y + viewport.Height * fraction), started);
+            }, cancellation.Token);
+            StopGestureRendering(flush: true);
+            _performance.End("replay-completed");
+            _selecting = false;
+            if (_session.Selection is { IsEmpty: false } selection)
+                _session.Selected(selection);
+            await Task.Delay(PresentationDrainMilliseconds, cancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            _performance.End("replay-cancelled");
+        }
+        catch (Exception error)
+        {
+            _performance.End("replay-failed");
+            AppLogger.Error($"{LogTag}: selection replay failed.", error);
+        }
+        finally
+        {
+            StopGestureRendering(flush: true);
+            if (_presentationProbe is not null)
+            {
+                await _presentationProbe.DisposeAsync();
+                _presentationProbe = null;
+                _presentationMarker = 0;
+            }
+            _replayCancellation = null;
+            _selecting = false;
+            if (IsLoaded) _session.Refresh();
+            if (ScreenshotDiagnostics.ExitAfterReplay)
+            {
+                _session.Close();
+                Application.Current.Shutdown();
+            }
+        }
     }
 
     private bool UpdateGesture(Point point)
@@ -669,10 +1068,18 @@ internal sealed class ScreenshotSurface : FrameworkElement
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
-        if (!IsMouseCaptured)
-            return;
+        if (_nativeCanvas is null) e.Handled = PointerUp(ScreenPoint(e));
+    }
+
+    internal void NativePointerUp(Point point, int timestamp) => PointerUp(point);
+
+    private bool PointerUp(Point point)
+    {
+        if (!PointerCaptured)
+            return false;
         // 松手事件可能没有对应的 MouseMove，提交前补上最终坐标。
-        UpdateGesture(ScreenPoint(e));
+        UpdateGesture(point);
+        StopGestureRendering(flush: true);
         if (_selecting)
         {
             var selected = _session.Selection ?? _session.Hover;
@@ -690,26 +1097,36 @@ internal sealed class ScreenshotSurface : FrameworkElement
             _session.CommitDraft();
         }
         _originalSelection = null;
-        ReleaseMouseCapture();
+        _performance.End("completed");
+        ReleasePointer();
         _session.Refresh();
-        e.Handled = true;
+        return true;
     }
 
     protected override void OnLostMouseCapture(MouseEventArgs e)
     {
         base.OnLostMouseCapture(e);
-        CancelGesture();
+        if (_nativeCanvas is null) CancelGesture();
+    }
+
+    private void ReleasePointer()
+    {
+        if (_nativeCanvas is not null) _nativeCanvas.ReleasePointer();
+        else ReleaseMouseCapture();
     }
 
     internal void CancelGesture()
     {
+        _replayCancellation?.Cancel();
+        _performance.End("cancelled");
         bool selecting = _selecting;
         _selecting = false;
         if (_originalSelection is { } original) _session.Selection = original;
         else if (selecting) _session.Selection = null;
         _originalSelection = null;
         _session.Draft = null;
-        if (IsMouseCaptured) ReleaseMouseCapture();
+        StopGestureRendering(flush: true);
+        if (PointerCaptured) ReleasePointer();
         _session.Refresh();
     }
 
@@ -731,7 +1148,7 @@ internal sealed class ScreenshotSurface : FrameworkElement
         if (_session.Hover != hover)
         {
             _session.Hover = hover;
-            UpdateVisuals();
+            _session.UpdateVisuals();
         }
     }
 

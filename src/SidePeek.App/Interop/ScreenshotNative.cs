@@ -1,12 +1,15 @@
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
+using SidePeek.App.Services;
 
 namespace SidePeek.App.Interop;
 
 /// <summary>截图使用物理像素坐标，避免混合 DPI 屏幕上的选区偏移。</summary>
 internal static class ScreenshotNative
 {
+    private const string LogTag = "[ScreenshotNative]";
+    private const uint ExcludeFromCaptureAffinity = 0x11;
     private const int DwmExtendedFrameBounds = 9;
     private const int DwmCloaked = 14;
     private const uint QueryOnlyActivePaths = 2;
@@ -97,7 +100,24 @@ internal static class ScreenshotNative
     }
 
     internal static void ExcludeFromCapture(Window window)
-        => SetWindowDisplayAffinity(new WindowInteropHelper(window).Handle, 0x11);
+    {
+        // 仅在窗口 SourceInitialized 时调用；可捕获需独立显式启用，常规诊断保留真实 affinity。
+        if (App.ScreenshotDiagnosticsCaptureVisible)
+        {
+            AppLogger.Info($"{LogTag} Capture exclusion skipped by explicit process-only capture-visible diagnostics; windowType={window.GetType().Name}.");
+            return;
+        }
+
+        if (!SetWindowDisplayAffinity(new WindowInteropHelper(window).Handle, ExcludeFromCaptureAffinity))
+        {
+            int error = Marshal.GetLastWin32Error();
+            AppLogger.Error($"{LogTag} Unable to exclude screenshot window from capture; windowType={window.GetType().Name}, Win32 error={error}.");
+        }
+        else if (App.ScreenshotDiagnosticsEnabled)
+        {
+            AppLogger.Info($"{LogTag} Capture exclusion applied during diagnostics; windowType={window.GetType().Name}, affinity=0x{ExcludeFromCaptureAffinity:X}.");
+        }
+    }
 
     /// <summary>Windows HDR 的 SDR 白电平：1000 = scRGB 1.0 = 80 nit。</summary>
     internal static float SdrWhiteScale(string deviceName)
